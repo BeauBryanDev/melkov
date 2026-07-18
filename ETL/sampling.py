@@ -7,9 +7,9 @@ from typing import Any
 
 from tqdm.auto import tqdm
 
-from caption_utils import CaptionResult, build_caption_result
-from config import ETLConfig, STYLE_CAPS, STYLE_EXCLUDE, STYLE_MERGE
-from image_utils import ImageProcessingError, encode_image_field
+from ETL.caption_utils import CaptionResult, build_caption_result
+from ETL.config import ETLConfig, STYLE_CAPS, STYLE_EXCLUDE, STYLE_MERGE
+from ETL.image_utils import ImageProcessingError, encode_image_field
 
 
 @dataclass(slots=True)
@@ -45,11 +45,6 @@ class SamplingCounters:
         default_factory=lambda: defaultdict(int)
     )
     skipped_image_errors: list[str] = field(default_factory=list)
-
-    @property
-    def images_in_reservoir(self) -> int:
-        """Return the number of successfully processed reservoir images."""
-        return 0
 
 
 @dataclass(slots=True)
@@ -344,7 +339,7 @@ def sample_stream(
                 )
 
                 if len(current_reservoir) < cap:
-                    current_reservoir.append(candidate)
+                    _store_candidate(current_reservoir, candidate, seen_count, cap, rng)
                 elif replacement_index is not None:
                     current_reservoir[replacement_index - 1] = candidate
 

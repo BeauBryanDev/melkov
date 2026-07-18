@@ -8,9 +8,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from config import ETLConfig
-from image_utils import calculate_sha256
-from sampling import ReservoirItem, SamplingResult
+import io
+from PIL import Image
+
+from ETL.config import ETLConfig
+from ETL.image_utils import calculate_sha256
+from ETL.sampling import ReservoirItem, SamplingResult
 
 
 _INVALID_FILENAME_CHARACTERS = re.compile(r"[^A-Za-z0-9_.-]+")
@@ -173,12 +176,15 @@ def write_images_and_manifest(
 
                     image_hash = calculate_sha256(item.jpeg_bytes)
 
+                    with Image.open(io.BytesIO(item.jpeg_bytes)) as processed_image:
+                        real_width, real_height = processed_image.size
+
                     manifest_entry = _create_manifest_entry(
                         item=item,
                         image_path=image_path,
                         output_dir=config.output_dir,
-                        image_width=config.target_size[0],
-                        image_height=config.target_size[1],
+                        image_width=real_width,
+                        image_height=real_height,
                         jpeg_quality=config.jpeg_quality,
                         image_hash=image_hash,
                         item_index=item_index,

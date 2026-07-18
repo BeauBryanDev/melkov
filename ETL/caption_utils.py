@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from config import (
+from ETL.config import (
     CAPTION_FIELD_CANDIDATES,
     MIN_CAPTION_CHARACTERS,
     MIN_CAPTION_WORDS,

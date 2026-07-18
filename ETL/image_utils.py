@@ -69,20 +69,21 @@ def _open_image_source(image_field: Any) -> PILImage:
 def _prepare_image(
     image: PILImage,
     target_size: tuple[int, int],
-    padding_color: tuple[int, int, int],
 ) -> PILImage:
-    """Convert an image to RGB and fit it into a centered square canvas.
+    """Convert an image to RGB and downscale it to fit within target_size.
 
-    The source aspect ratio is preserved. Images are resized using Lanczos
-    resampling and centered padding is applied without stretching.
+    The source aspect ratio is always preserved. No padding or cropping is
+    applied — Qwen2-VL processes images at their native aspect ratio, so
+    forcing a square canvas would inject meaningless black-pixel tokens
+    and distort proportions the model's own processor does not expect.
 
     Args:
         image: Source PIL image.
-        target_size: Output width and height.
-        padding_color: RGB color used for the padded area.
+        target_size: Maximum width and height the image may occupy.
 
     Returns:
-        A new RGB PIL image with exactly ``target_size`` dimensions.
+        A new RGB PIL image no larger than target_size, same aspect ratio
+        as the source.
 
     Raises:
         ImageProcessingError: If image preprocessing fails.
@@ -91,38 +92,27 @@ def _prepare_image(
         oriented_image = ImageOps.exif_transpose(image)
         rgb_image = oriented_image.convert("RGB")
 
-        processed_image = ImageOps.pad(
-            rgb_image,
-            target_size,
-            method=Image.Resampling.LANCZOS,
-            color=padding_color,
-            centering=(0.5, 0.5),
-        )
+        # thumbnail() modifies in place and only ever downsizes, preserving
+        # aspect ratio. Since every OpenBrush source image is already
+        # larger than target_size (confirmed by the audit), this is always
+        # pure downsampling, never upscaling.
+        rgb_image.thumbnail(target_size, Image.Resampling.LANCZOS)
 
-        if processed_image.mode != "RGB":
-            processed_image = processed_image.convert("RGB")
+        if rgb_image.mode != "RGB":
+            rgb_image = rgb_image.convert("RGB")
 
-        if processed_image.size != target_size:
-            raise ImageProcessingError(
-                "Processed image has an unexpected size: "
-                f"{processed_image.size}; expected {target_size}."
-            )
+        return rgb_image
 
-        return processed_image
-
-    except ImageProcessingError:
-        raise
     except Exception as exc:
         raise ImageProcessingError(
             f"Unable to preprocess image: {exc}"
         ) from exc
-
-
+        
+        
 def encode_pil_image(
     image: PILImage,
     target_size: tuple[int, int] = (896, 896),
     jpeg_quality: int = 90,
-    padding_color: tuple[int, int, int] = (0, 0, 0),
 ) -> bytes:
     """Resize, pad, and encode a PIL image as JPEG bytes.
 
@@ -149,11 +139,7 @@ def encode_pil_image(
     if not 1 <= jpeg_quality <= 100:
         raise ValueError("jpeg_quality must be between 1 and 100.")
 
-    if len(padding_color) != 3:
-        raise ValueError("padding_color must contain three RGB values.")
 
-    if any(not 0 <= value <= 255 for value in padding_color):
-        raise ValueError("Each padding color value must be between 0 and 255.")
 
     processed_image: PILImage | None = None
 
@@ -161,7 +147,7 @@ def encode_pil_image(
         processed_image = _prepare_image(
             image=image,
             target_size=target_size,
-            padding_color=padding_color,
+
         )
 
         output_buffer = io.BytesIO()
@@ -187,7 +173,6 @@ def encode_image_field(
     image_field: Any,
     target_size: tuple[int, int] = (896, 896),
     jpeg_quality: int = 90,
-    padding_color: tuple[int, int, int] = (0, 0, 0),
 ) -> bytes:
     """Load an image field and encode it as a standardized JPEG.
 
@@ -221,7 +206,6 @@ def encode_image_field(
             image=opened_image,
             target_size=target_size,
             jpeg_quality=jpeg_quality,
-            padding_color=padding_color,
         )
 
     except ImageProcessingError:

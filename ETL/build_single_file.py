@@ -164,8 +164,10 @@ def merge_modules(
 
     merged_sections: list[str] = []
     future_import_already_written = False
+    any_future_import = False
 
     for module_index, module_name in enumerate(module_order):
+        
         module_path = source_dir / module_name
 
         if not module_path.is_file():
@@ -176,22 +178,24 @@ def merge_modules(
         tree = _validate_source(module_path)
         source = module_path.read_text(encoding="utf-8")
 
-        processed_source, future_import_already_written = (
-            _remove_source_ranges(
+        processed_source, has_future_import = _remove_source_ranges(
                 source=source,
                 tree=tree,
                 is_first_module=module_index == 0,
-                future_import_already_written=future_import_already_written,
+                #future_import_already_written=future_import_already_written,
             )
+            
+        any_future_import = any_future_import or future_import_already_written
+
+        header = "from __future__ import annotations\n" if any_future_import else ""
+
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_file.write_text(
+            header + "".join(merged_sections),
+            encoding="utf-8",
+            newline="\n",
         )
 
-        section_header = (
-            f"\n\n# -----------------------------------------------------------------\n"
-            f"# Merged module: {module_name}\n"
-            f"# -----------------------------------------------------------------\n\n"
-        )
-
-        merged_sections.append(section_header)
         merged_sections.append(processed_source.rstrip())
         merged_sections.append("\n")
 
