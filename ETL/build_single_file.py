@@ -43,11 +43,28 @@ def configure_logging() -> logging.Logger:
     return logging.getLogger(LOGGER_NAME)
 
 
+def _references_internal_module(dotted_name: str) -> bool:
+    """Return whether a dotted import name targets a project module.
+
+    Both the bare form (``config``) and the package-qualified form
+    (``ETL.config``) are recognized, since the modules use them
+    interchangeably. The package name ``ETL`` itself is treated as internal so
+    that any ``ETL.*`` import — including helper modules not listed in
+    ``INTERNAL_MODULES`` such as ``ETL.build_single_file`` — is stripped.
+    """
+    parts = dotted_name.split(".")
+
+    if parts[0] == "ETL":
+        return True
+
+    return parts[0] in INTERNAL_MODULES
+
+
 def _is_internal_import(node: ast.Import | ast.ImportFrom) -> bool:
     """Return whether an import references one of the project modules."""
     if isinstance(node, ast.Import):
         return any(
-            alias.name.split(".")[0] in INTERNAL_MODULES
+            _references_internal_module(alias.name)
             for alias in node.names
         )
 
@@ -57,7 +74,7 @@ def _is_internal_import(node: ast.Import | ast.ImportFrom) -> bool:
     if node.module is None:
         return False
 
-    return node.module.split(".")[0] in INTERNAL_MODULES
+    return _references_internal_module(node.module)
 
 
 def _is_future_import(node: ast.Import | ast.ImportFrom) -> bool:
@@ -85,16 +102,20 @@ def _remove_source_ranges(
     source: str,
     tree: ast.Module,
     is_first_module: bool,
-    future_import_already_written: bool,
 ) -> tuple[str, bool]:
     """Remove imports that cannot remain in the merged file.
 
     Internal imports are removed because all project modules are concatenated
-    into the same namespace. Future imports are retained only from the first
-    module because Python requires them to appear at the beginning of a file.
+    into the same namespace. Every ``__future__`` import is removed here; the
+    caller prepends a single one at the top of the merged file, which is the
+    only place Python allows it.
+
+    Returns:
+        The processed source and whether it contained a ``__future__`` import.
     """
     source_lines = source.splitlines(keepends=True)
     ranges_to_remove: list[tuple[int, int]] = []
+    found_future_import = False
 
     for node in tree.body:
         should_remove = False
@@ -103,10 +124,8 @@ def _remove_source_ranges(
             if _is_internal_import(node):
                 should_remove = True
             elif _is_future_import(node):
-                if future_import_already_written:
-                    should_remove = True
-                else:
-                    future_import_already_written = True
+                found_future_import = True
+                should_remove = True
 
         if _is_module_docstring(node, is_first_module):
             should_remove = True
@@ -120,7 +139,7 @@ def _remove_source_ranges(
         for line_index in range(start_line, end_line):
             source_lines[line_index] = ""
 
-    return "".join(source_lines), future_import_already_written
+    return "".join(source_lines), found_future_import
 
 
 def _validate_source(path: Path) -> ast.Module:
@@ -163,11 +182,9 @@ def merge_modules(
         )
 
     merged_sections: list[str] = []
-    future_import_already_written = False
     any_future_import = False
 
     for module_index, module_name in enumerate(module_order):
-        
         module_path = source_dir / module_name
 
         if not module_path.is_file():
@@ -179,29 +196,25 @@ def merge_modules(
         source = module_path.read_text(encoding="utf-8")
 
         processed_source, has_future_import = _remove_source_ranges(
-                source=source,
-                tree=tree,
-                is_first_module=module_index == 0,
-                #future_import_already_written=future_import_already_written,
-            )
-            
-        any_future_import = any_future_import or future_import_already_written
-
-        header = "from __future__ import annotations\n" if any_future_import else ""
-
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-        output_file.write_text(
-            header + "".join(merged_sections),
-            encoding="utf-8",
-            newline="\n",
+            source=source,
+            tree=tree,
+            is_first_module=module_index == 0,
         )
+
+        any_future_import = any_future_import or has_future_import
 
         merged_sections.append(processed_source.rstrip())
         merged_sections.append("\n")
 
+    # A single __future__ import at the very top, since Python requires it to
+    # be the first statement and every source module declared its own.
+    header = (
+        "from __future__ import annotations\n\n" if any_future_import else ""
+    )
+
     output_file.parent.mkdir(parents=True, exist_ok=True)
     output_file.write_text(
-        "".join(merged_sections),
+        header + "".join(merged_sections),
         encoding="utf-8",
         newline="\n",
     )

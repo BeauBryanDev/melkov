@@ -66,36 +66,15 @@ def _open_image_source(image_field: Any) -> PILImage:
     )
 
 
-def _prepare_image(
-    image: PILImage,
-    target_size: tuple[int, int],
-) -> PILImage:
-    """Convert an image to RGB and downscale it to fit within target_size.
-
-    The source aspect ratio is always preserved. No padding or cropping is
-    applied — Qwen2-VL processes images at their native aspect ratio, so
-    forcing a square canvas would inject meaningless black-pixel tokens
-    and distort proportions the model's own processor does not expect.
-
-    Args:
-        image: Source PIL image.
-        target_size: Maximum width and height the image may occupy.
-
-    Returns:
-        A new RGB PIL image no larger than target_size, same aspect ratio
-        as the source.
-
-    Raises:
-        ImageProcessingError: If image preprocessing fails.
-    """
+def _prepare_image(image: PILImage, target_size: tuple[int, int]) -> PILImage:
     try:
-        oriented_image = ImageOps.exif_transpose(image)
-        rgb_image = oriented_image.convert("RGB")
+        working_image = image
+        
+        if working_image.format == "JPEG":
+            working_image.draft("RGB", target_size)
 
-        # thumbnail() modifies in place and only ever downsizes, preserving
-        # aspect ratio. Since every OpenBrush source image is already
-        # larger than target_size (confirmed by the audit), this is always
-        # pure downsampling, never upscaling.
+        oriented_image = ImageOps.exif_transpose(working_image)
+        rgb_image = oriented_image.convert("RGB")
         rgb_image.thumbnail(target_size, Image.Resampling.LANCZOS)
 
         if rgb_image.mode != "RGB":
@@ -109,18 +88,22 @@ def _prepare_image(
         ) from exc
         
         
+        
 def encode_pil_image(
     image: PILImage,
     target_size: tuple[int, int] = (896, 896),
     jpeg_quality: int = 90,
 ) -> bytes:
-    """Resize, pad, and encode a PIL image as JPEG bytes.
+    """Downscale (aspect-ratio preserving) and encode a PIL image as JPEG bytes.
+
+    No padding or cropping is applied: the image is fit within target_size
+    while keeping its original aspect ratio, so Qwen2-VL sees dynamic
+    resolution rather than a distorted or letterboxed square.
 
     Args:
         image: Source PIL image.
-        target_size: Final output dimensions.
+        target_size: Maximum output dimensions (longest side bound).
         jpeg_quality: JPEG quality from 1 through 100.
-        padding_color: RGB color for centered padding.
 
     Returns:
         Encoded JPEG bytes.
@@ -182,9 +165,8 @@ def encode_image_field(
 
     Args:
         image_field: Hugging Face image field or supported image source.
-        target_size: Final output dimensions.
+        target_size: Maximum output dimensions (longest side bound).
         jpeg_quality: JPEG quality from 1 through 100.
-        padding_color: RGB color for centered padding.
 
     Returns:
         JPEG-encoded image bytes.

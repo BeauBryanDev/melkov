@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import ast
 import json
 import logging
 import sys
@@ -11,7 +10,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ETL.build_single_file import _is_future_import, _is_internal_import, _is_module_docstring
 from datasets import Image as HFImage
 from datasets import load_dataset
 
@@ -168,41 +166,6 @@ def build_dataset_info(
         "number_of_images": images_written,
     }
 
-
-def _remove_source_ranges(
-    source: str,
-    tree: ast.Module,
-    is_first_module: bool,
-) -> tuple[str, bool]:
-    """Remove imports that cannot remain in the merged file.!"""
-    source_lines = source.splitlines(keepends=True)
-    ranges_to_remove: list[tuple[int, int]] = []
-    found_future_import = False
-
-    for node in tree.body:
-        should_remove = False
-
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
-            if _is_internal_import(node):
-                should_remove = True
-            elif _is_future_import(node):
-                found_future_import = True
-                should_remove = True
-
-        if _is_module_docstring(node, is_first_module):
-            should_remove = True
-
-        if should_remove:
-            start_line = node.lineno - 1
-            end_line = node.end_lineno
-            ranges_to_remove.append((start_line, end_line))
-
-    for start_line, end_line in ranges_to_remove:
-        for line_index in range(start_line, end_line):
-            source_lines[line_index] = ""
-
-    return "".join(source_lines), found_future_import
-    
 
 def write_dataset_info(
     config: ETLConfig,
