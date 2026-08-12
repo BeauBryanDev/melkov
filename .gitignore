@@ -217,3 +217,10 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 node_modules
+
+chroma_art_atelier/
+
+RAG_Instuctions.md
+
+
+.env
