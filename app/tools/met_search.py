@@ -119,6 +119,7 @@ def _extract_tags(raw_tags: Any) -> list[str]:
     tags: list[str] = []
 
     for tag in raw_tags:
+        
         if not isinstance(tag, dict):
             continue
 
@@ -415,9 +416,10 @@ def _normalize_artwork(
 # Public tool
 
 def search_met_artworks(
+    
     query: str,
     max_results: int = DEFAULT_MAX_RESULTS,
-    *,
+    *, # keyword-only arguments
     artist_or_culture: bool = False,
     medium: str | None = None,
     department_id: int | None = None,
@@ -429,6 +431,7 @@ def search_met_artworks(
     date_begin: int | None = None,
     date_end: int | None = None,
     require_public_domain: bool = True,
+    
 ) -> list[dict[str, Any]]:
     """
     Search The Metropolitan Museum of Art collection.
@@ -519,6 +522,7 @@ def search_met_artworks(
     # for a small portfolio-agent workload and to remain comfortably below
     # The Met's published request-rate limit.
     for object_id in object_ids:
+        
         if len(results) >= limit:
             break
 
