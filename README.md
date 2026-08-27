@@ -1,15 +1,25 @@
-# Aegis-Art-Atelier
+# Melkov 
 
-An AI art expert agent — fine-tuned vision-language model + retrieval-augmented
-art history knowledge + generative image synthesis, exposed through a full-stack
-web application.
 
-Part of the Aegis portfolio. Unlike the detection/classification-oriented Aegis
-projects (Sentinel-Net, Traffic-Sentinel, DentaVision, etc.), this is the
-portfolio's first generative multimodal agent.
+# Melkov
 
-Status: dataset ETL in progress. Training and full-stack implementation not
-started yet. This document reflects the architecture and decisions made so far.
+**Melkov** is a multimodal AI art expert agent built around a fine-tuned **Qwen2.5-VL-7B** vision-language model, retrieval-augmented art-history knowledge, computer vision, and generative image synthesis it used the Claude-Sonnet-5 as Orchestrator Agent from Anthropic API Key. 
+
+Designed as a full-stack AI application, Melkov can analyze artworks, discuss art history and artistic movements, generate original art, search museum collections, and classify artistic styles through a dedicated computer-vision model.
+
+Part of the **Aegis portfolio**, Melkov takes a different direction from the portfolio's detection and classification systems such as Sentinel-Net, Traffic-Sentinel, and DentaVision. It is the portfolio's first **generative, multimodal AI agent focused exclusively on the domain of art**.
+
+Rather than relying on a single model for every task, Melkov uses an orchestrator architecture with **five specialized tools**, each responsible for a specific capability:
+
+1. **Art History RAG** — retrieves relevant knowledge from a curated art-history corpus using ChromaDB and semantic embeddings.
+2. **MET Museum Search** — searches the Metropolitan Museum of Art's public collection API and retrieves artwork metadata and museum images.
+3. **Artwork Vision & Description** — uses the fine-tuned Melkov VLM to analyze submitted artworks and produce detailed artistic descriptions.
+4. **Art Image Generation** — generates original artwork through the FLUX image-generation model served through NVIDIA's API.
+5. **Art Style Classification** — uses a custom-trained CNN to classify artworks across 15 artistic styles.
+
+The result is an AI agent that combines **vision, language, retrieval, generation, and computer vision** into a single art-focused system.
+
+Melkov lives in a beautiful web site SPA built with TS/React/Tailwindcss Art-Studio likes.
 
 ---
 
