@@ -1,8 +1,5 @@
 # Melkov 
 
-
-# Melkov
-
 **Melkov** is a multimodal AI art expert agent built around a fine-tuned **Qwen2.5-VL-7B** vision-language model, retrieval-augmented art-history knowledge, computer vision, and generative image synthesis it used the Claude-Sonnet-5 as Orchestrator Agent from Anthropic API Key. 
 
 Designed as a full-stack AI application, Melkov can analyze artworks, discuss art history and artistic movements, generate original art, search museum collections, and classify artistic styles through a dedicated computer-vision model.
