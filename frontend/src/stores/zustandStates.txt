@@ -1,0 +1,35 @@
+We must use Zustand for React states
+
+
+Artwork Store
+
+uploaded image
+
+analysis
+
+style
+
+artist
+
+confidence
+
+loading
+
+Chat Store
+
+messages
+
+thinking
+
+streaming
+
+UI Store
+
+theme
+
+drawer
+
+dialogs
+
+notifications
+

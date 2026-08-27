@@ -1,0 +1,23 @@
+
+<App>
+
+MainLayout
+
+Header
+
+Main Grid
+
+ArtworkFrame
+
+ChatPanel
+
+Evidence Grid
+
+ArtHistory
+
+ConfidenceChart
+
+Footer
+</App>
+
+

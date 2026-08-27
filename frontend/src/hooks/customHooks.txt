@@ -1,0 +1,33 @@
+# These are the CUstom hooks We expect this application needs
+
+useArtwork()
+
+upload image
+
+preview image
+
+loading state
+
+analysis state
+
+useChat()
+
+messages
+
+stream response
+
+send message
+
+typing state
+
+useDragDrop()
+
+drag events
+
+drop events
+
+hover state
+
+useAutoScroll()
+
+scroll chat automatically
