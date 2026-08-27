@@ -13,6 +13,7 @@ from app.agent.prompts import MELKOV_SYSTEM_PROMPT
 from app.config import ANTHROPIC_API_KEY, ANTHROPIC_MODEL, LLM_TEMPERATURE
 from app.tools.flux_generate import generate_artwork
 from app.tools.met_search import search_met_artworks
+from app.tools.art_style_identifier import StyleIdentification, identify_art_style
 from app.tools.rag_retriever import query_art_history
 from app.tools.vlm_describe import describe_artwork
 from app.utils.image_utils import base64_to_pil, pil_to_base64
@@ -25,6 +26,8 @@ class Artifacts(TypedDict):
 
     generated_image_b64: str | None
     met_results: list[dict[str, Any]] | None
+    style_analysis: StyleIdentification | None
+    vlm_description: str | None
 
 
 def build_melkov_agent(current_image_b64: str | None = None) -> tuple[Any, Artifacts]:
@@ -43,7 +46,12 @@ def build_melkov_agent(current_image_b64: str | None = None) -> tuple[Any, Artif
         A ``(agent, artifacts)`` pair. Invoke the agent with
         ``{"messages": [...]}``; read ``artifacts`` afterwards.
     """
-    artifacts: Artifacts = {"generated_image_b64": None, "met_results": None}
+    artifacts: Artifacts = {
+        "generated_image_b64": None,
+        "met_results": None,
+        "style_analysis": None,
+        "vlm_description": None,
+    }
 
     @tool
     def describe_artwork_tool() -> str:
@@ -61,12 +69,18 @@ def build_melkov_agent(current_image_b64: str | None = None) -> tuple[Any, Artif
                 "one before analysing it."
             )
         try:
-            return describe_artwork(base64_to_pil(current_image_b64))
+            description = describe_artwork(base64_to_pil(current_image_b64))
         
         except Exception as error:  # noqa: BLE001 - reported to the model, not raised
             logger.exception("vlm_describe failed")
             
             return _tool_error("the vision model", error)
+
+        # Kept in the side-channel as well as returned: the frontend shows the
+        # VLM's own words verbatim, not Melkov's paraphrase of them.
+        artifacts["vlm_description"] = description
+
+        return description
 
     @tool
     def generate_artwork_tool(prompt: str) -> str:
@@ -151,10 +165,44 @@ def build_melkov_agent(current_image_b64: str | None = None) -> tuple[Any, Artif
             logger.exception("rag_retriever failed")
             return _tool_error("the art-history library", error)
 
+    @tool
+    def identify_art_style_tool() -> str:
+        """
+        Score the attached image against the fifteen art-historical styles.
+
+        This is your trained classifier, not a guess: it returns ranked styles
+        with confidences. Call it on every attached artwork, alongside your
+        own reading of the picture, before naming a movement or period. Takes
+        no arguments — the attached image is supplied automatically. Do not
+        use it when no image was attached.
+        """
+        if not current_image_b64:
+            return (
+                "No image was attached to this message. Ask the user to upload "
+                "one before classifying its style."
+            )
+        try:
+            result = identify_art_style(base64_to_pil(current_image_b64))
+
+        except Exception as error:  # noqa: BLE001
+            logger.exception("art_style_identifier failed")
+
+            return _tool_error("the style classifier", error)
+
+        artifacts["style_analysis"] = result
+
+        ranked = ", ".join(
+            f"{item['label']} {item['probability']:.0%}"
+            for item in result["predictions"]
+        )
+        
+        return f"Style classifier ({result['model']}) ranks this work: {ranked}."
+
+
     # Melkov tools are all functions, not classes, so they can't be decorated.
-    # TODO missing the art style classifier tool
     tools: list[Any] = [
         describe_artwork_tool,
+        identify_art_style_tool,
         generate_artwork_tool,
         search_met_artworks_tool,
         query_art_history_tool,
