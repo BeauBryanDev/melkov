@@ -27,6 +27,9 @@ gradio_client>=1.3
 requests>=2.31            # flux_generate (NVIDIA build API), met_search
 urllib3>=2.0              # met_search retry policy (Retry, HTTPAdapter)
 Pillow>=10.0              # app/utils/image_utils.py
+# art_style_identifier runs the CNN on CPU with no torch at inference. Direct
+# dependency, not the incidental chromadb pull it used to be.
+onnxruntime>=1.18
 
 #RAG query path (app/tools/rag_retriever.py -> RAG/retrieval.py)
 chromadb>=0.5
