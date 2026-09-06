@@ -44,6 +44,20 @@ FLUX_TIMEOUT: Final[float] = float(os.getenv("FLUX_TIMEOUT", "120"))
 #  MET Museum Open Access collection  
 MET_API_BASE: Final[str] = "https://collectionapi.metmuseum.org/public/collection/v1"
 
+# Louvre / British Museum via Wikidata SPARQL (needs a descriptive User-Agent).
+WIKIDATA_SPARQL_ENDPOINT: Final[str] = "https://query.wikidata.org/sparql"
+WIKIDATA_USER_AGENT: Final[str] = os.getenv(
+    "WIKIDATA_USER_AGENT",
+    "Aegis-Art-Atelier-Melkov/1.0 (https://github.com/BeauBryanDev/)",
+)
+WIKIDATA_TIMEOUT: Final[float] = float(os.getenv("WIKIDATA_TIMEOUT", "20"))
+MUSEUM_SEARCH_LIMIT: Final[int] = int(os.getenv("MUSEUM_SEARCH_LIMIT", "8"))
+
+# Artist advisor (YouTube Data API v3). Optional.
+YOUTUBE_DATA_API_KEY: Final[str] = os.getenv("YOUTUBE_DATA_API_KEY", "")
+YOUTUBE_SEARCH_POOL: Final[int] = int(os.getenv("YOUTUBE_SEARCH_POOL", "10"))
+YOUTUBE_MAX_RESULTS: Final[int] = int(os.getenv("YOUTUBE_MAX_RESULTS", "3"))
+
 # Art-style classifier (EfficientNetV2-S, ONNX, CPU)  
 ART_STYLE_MODEL_DIR: Final[Path] = Path(
     os.getenv("ART_STYLE_MODEL_DIR", str(Path(__file__).resolve().parents[1] / "models"))
@@ -93,6 +107,9 @@ def verify_config() -> list[str]:
     if not NVIDIA_API_KEY:
         
         warnings.append("NVIDIA_API_KEY missing — image generation is disabled.")
+
+    if not YOUTUBE_DATA_API_KEY:
+        warnings.append("YOUTUBE_DATA_API_KEY missing — painting-advice videos are disabled.")
         
     if not ART_STYLE_MODEL_PATH.is_file() or not ART_STYLE_CLASSES_PATH.is_file():
         warnings.append(

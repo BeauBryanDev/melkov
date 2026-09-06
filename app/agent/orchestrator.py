@@ -10,12 +10,23 @@ from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.tools import tool
 
 from app.agent.prompts import MELKOV_SYSTEM_PROMPT
-from app.config import ANTHROPIC_API_KEY, ANTHROPIC_MODEL, LLM_TEMPERATURE
+from app.config import (
+    ANTHROPIC_API_KEY,
+    ANTHROPIC_MODEL,
+    LLM_EFFORT,
+    LLM_MAX_TOKENS,
+    LLM_TEMPERATURE,
+    LLM_THINKING_ENABLED,
+)
+## All Melkov tools ##
 from app.tools.flux_generate import generate_artwork
 from app.tools.met_search import search_met_artworks
 from app.tools.art_style_identifier import StyleIdentification, identify_art_style
 from app.tools.rag_retriever import query_art_history
 from app.tools.vlm_describe import describe_artwork
+from app.tools.louvre_search import louvre_search
+from app.tools.british_museum_search import british_museum_search
+from app.tools.artist_advisor import get_art_advice
 from app.utils.image_utils import base64_to_pil, pil_to_base64
 
 logger = logging.getLogger(__name__)
@@ -26,6 +37,9 @@ class Artifacts(TypedDict):
 
     generated_image_b64: str | None
     met_results: list[dict[str, Any]] | None
+    louvre_results: list[dict[str, Any]] | None
+    british_museum_results: list[dict[str, Any]] | None
+    art_advice: list[dict[str, Any]] | None
     style_analysis: StyleIdentification | None
     vlm_description: str | None
 
@@ -49,6 +63,9 @@ def build_melkov_agent(current_image_b64: str | None = None) -> tuple[Any, Artif
     artifacts: Artifacts = {
         "generated_image_b64": None,
         "met_results": None,
+        "louvre_results": None,
+        "british_museum_results": None,
+        "art_advice": None,
         "style_analysis": None,
         "vlm_description": None,
     }
@@ -111,6 +128,7 @@ def build_melkov_agent(current_image_b64: str | None = None) -> tuple[Any, Artif
         
         return f"Image generated successfully for the prompt: {prompt!r}."
 
+
     @tool
     def search_met_artworks_tool(query: str) -> str:
         """
@@ -143,6 +161,67 @@ def build_melkov_agent(current_image_b64: str | None = None) -> tuple[Any, Artif
             for item in results
         )
         return f"Found {len(results)} works: {titles}"
+    
+    
+    @tool
+    def search_louvre_artworks_tool(query: str) -> str:
+        """
+        Search the Louvre's collection by title or artist. Use when the person
+        asks for the Louvre, or when the MET search came back empty.
+
+        Args:
+            query: An artwork title or artist name, e.g. "Delacroix".
+        """
+        return _run_museum_search(
+            "louvre_results", "the Louvre collection (Wikidata)", louvre_search, query
+        )
+
+    @tool
+    def search_british_museum_artworks_tool(query: str) -> str:
+        """
+        Search the British Museum's collection by title or artist. Use when the
+        person asks for it, or when the MET search came back empty.
+
+        Args:
+            query: An object title or artist name, e.g. "Hokusai".
+        """
+        return _run_museum_search(
+            "british_museum_results",
+            "the British Museum collection (Wikidata)",
+            british_museum_search,
+            query,
+        )
+
+    def _run_museum_search(
+        artifact_key: str, 
+        subject: str, 
+        search: Any, 
+        query: str
+    ) -> str:
+        
+        try:
+            envelope = search(query)
+            
+        except Exception as error:  # noqa: BLE001
+            logger.exception("%s failed", artifact_key)
+            return _tool_error(subject, error)
+
+        results = envelope.get("results") or []
+        artifacts[artifact_key] = results  # type: ignore[literal-required]
+
+        if envelope.get("error"):
+            return f"TOOL FAILURE: {envelope['error']} Tell the user and carry on."
+        
+        if not results:
+            return f"No works found in {subject} for {query!r}."
+
+        summary = "; ".join(
+            f"{item.get('title') or 'Untitled'} "
+            f"({item.get('artist') or 'artist unknown'}, "
+            f"{_year_of(item.get('date'))}) {item.get('object_url') or ''}".rstrip()
+            for item in results
+        )
+        return f"Found {len(results)} works: {summary}"
 
     @tool
     def query_art_history_tool(question: str) -> str:
@@ -197,7 +276,37 @@ def build_melkov_agent(current_image_b64: str | None = None) -> tuple[Any, Artif
         )
         
         return f"Style classifier ({result['model']}) ranks this work: {ranked}."
+    
+    
+    @tool
+    def get_art_advice_tool(query: str) -> str:
+        """
+        Find painting-technique videos (brushwork, colour mixing, skin tones,
+        impasto) from trusted artist channels. Use for "how do I paint" questions.
 
+        Args:
+            query: The technique, in English, e.g. "realistic skin tones in oil".
+        """
+        try:
+            results = get_art_advice(query)
+            
+        except Exception as error:  # noqa: BLE001
+            logger.exception("artist_advisor failed")
+            return _tool_error("the painting-advice video search", error)
+
+        artifacts["art_advice"] = results
+        
+        if not results:
+            return (
+                f"No videos from the trusted channels matched {query!r}. "
+                "Suggest a more specific technique, or answer from your own "
+                "knowledge of painting."
+            )
+            
+        listing = "; ".join(
+            f"{item['title']} by {item['channel']} - {item['url']}" for item in results
+        )
+        return f"Found {len(results)} videos: {listing}"
 
     # Melkov tools are all functions, not classes, so they can't be decorated.
     tools: list[Any] = [
@@ -205,17 +314,29 @@ def build_melkov_agent(current_image_b64: str | None = None) -> tuple[Any, Artif
         identify_art_style_tool,
         generate_artwork_tool,
         search_met_artworks_tool,
+        search_louvre_artworks_tool,
+        search_british_museum_artworks_tool,
         query_art_history_tool,
+        get_art_advice_tool,
     ]
 
-    # temperature is passed only when configured: Sonnet 5 and later reject
-    # the argument with a 400 rather than ignoring it.
+    # temperature only when configured (Sonnet 5 rejects it with a 400).
+    # Thinking off unless asked: Sonnet 5 thinks by default and bills it as output.
     model_kwargs: dict[str, Any] = {
+        
         "model": ANTHROPIC_MODEL,
         "api_key": ANTHROPIC_API_KEY,
+        "max_tokens": LLM_MAX_TOKENS,
+        # Sonnet 5 rejects budget_tokens; "adaptive" is its only on-mode.
+        "thinking": {"type": "adaptive" if LLM_THINKING_ENABLED else "disabled"},
     }
+    if LLM_EFFORT:
+        model_kwargs["reasoning_effort"] = LLM_EFFORT
+        
     if LLM_TEMPERATURE is not None:
+        
         model_kwargs["temperature"] = LLM_TEMPERATURE
+        
     model = ChatAnthropic(**model_kwargs)
 
     agent = create_agent(
@@ -226,8 +347,17 @@ def build_melkov_agent(current_image_b64: str | None = None) -> tuple[Any, Artif
     return agent, artifacts
 
 
+def _year_of(date: str | None) -> str:
+    """Year of a Wikidata timestamp like 1503-01-01T00:00:00Z."""
+    if not date:
+        return "date unknown"
+    
+    return date.lstrip("-")[:4] if date[0] != "-" else f"{date[1:5]} BC"
+
+
 def _tool_error(subject: str, error: Exception) -> str:
-    """Phrase a tool failure as something the model can recover from.
+    """
+    Phrase a tool failure as something the model can recover from.
 
     Returned rather than raised on purpose: an exception escaping a tool ends
     the whole turn with a 500, whereas a plain-language failure lets Melkov
@@ -272,6 +402,7 @@ def extract_reply(messages: list[BaseMessage]) -> str:
                     block.get("text", "")
                     for block in content
                     if isinstance(block, dict) and block.get("type") == "text"
+                    
                 ).strip()
                 
                 if text:
@@ -281,7 +412,8 @@ def extract_reply(messages: list[BaseMessage]) -> str:
 
 
 def extract_tool_calls(messages: list[BaseMessage]) -> list[tuple[str, str]]:
-    """List the tools the agent used, in call order.
+    """
+    List the tools the agent used, in call order.
 
     Replaces the ``intermediate_steps`` key of the old ``AgentExecutor``,
     which LangChain 1.x no longer produces.
