@@ -56,6 +56,18 @@ class ChatResponse(BaseModel):
     tools_used: list[ToolCallLog] = Field(default_factory=list)
     generated_image_base64: str | None = None
     met_results: list[dict[str, Any]] | None = None
+    louvre_results: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="Louvre works found via Wikidata; present only when that tool ran.",
+    )
+    british_museum_results: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="British Museum works found via Wikidata; present only when that tool ran.",
+    )
+    art_advice: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="Painting-technique videos from trusted channels; present only when that tool ran.",
+    )
     vlm_description: str | None = Field(
         default=None,
         description=(
