@@ -83,7 +83,9 @@ def search_museum(museum: Museum,
                   limit: int = MUSEUM_SEARCH_LIMIT
                   ) -> dict[str, Any]:
     """Search one museum. Returns {source, query, results, [error]}; never raises."""
-    limit = max(1, min(int(limit), MAX_LIMIT))
+    limit = max(1, 
+                min(int(limit), 
+                MAX_LIMIT))
     
     envelope: dict[str, Any] = {"source": museum.source, 
                                 "query": query, "results": []
