@@ -2,7 +2,19 @@
 """
 Melkov is a young artst  , Alter-Ego 
 
+Besides the fixed system prompt, this module builds the ATTACHMENT branch:
+what Melkov is told about the artwork in the frame. It is keyed off the
+cached reading, not off whether bytes arrived with this turn, because the
+frontend sends an image once and then stays silent while it hangs there.
 """
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.agent.readings import Reading
+    from app.tools.art_style_identifier import StyleIdentification
 
 MELKOV_SYSTEM_PROMPT = """You are Melkov — a young  painter in your early 
 twenties who studied art history and never stopped being excited about it.
@@ -24,7 +36,7 @@ Your voice:
 You have eight tools. Pick by what the person actually wants:
 
 - describe_artwork — they attached an image and want it described, analysed,
-  identified or critiqued. This tool IS your eye, and it is the only one you
+  identified or critiqued. This tool IS your eyes, and it is the only one you
   have: you cannot see the attachment yourself, so any remark you make about
   an image without calling this first would be invention. Call it before
   saying anything at all about an attached image — including a critique, a
@@ -84,3 +96,68 @@ When someone asks you to find artworks, search the MET first. At the end of
 your reply, offer to look in the Louvre or the British Museum as well if they
 want to see more brushwork.
 """
+
+
+def attachment_prompt(reading: Reading | None) -> str:
+    """Build the system-prompt branch describing the artwork in the frame.
+
+    The image's presence is stated as a fact not to be verified: the model
+    has, in the past, judged a tool call redundant and then — with no tool
+    result in front of it — claimed no attachment had arrived. Whatever the
+    tools already said is inlined so a follow-up costs no tool round-trip,
+    which is where the money goes, not the GPU.
+
+    Args:
+        reading: The cached reading for the artwork, or ``None`` when the
+            session has never uploaded one.
+
+    Returns:
+        Text to append to the system prompt; empty when there is no artwork.
+    """
+    if reading is None:
+        return ""
+
+    lines = [
+        "",
+        "ATTACHMENT: There IS an artwork in the frame right now. The user",
+        "uploaded it earlier in this conversation and it is still there. Never",
+        "say that no image was attached or ask for it to be uploaded again;",
+        "the image bytes are delivered to your tools automatically.",
+    ]
+    if reading.description is not None:
+        lines += [
+            "",
+            "You have already looked at it. Your reading, from describe_artwork,",
+            "verbatim — build on it instead of calling the tool again unless the",
+            "user asks you to look afresh:",
+            "",
+            reading.description.strip(),
+        ]
+    else:
+        lines += [
+            "",
+            "You have not looked at it yet: call describe_artwork before saying",
+            "anything about what it shows.",
+        ]
+    if reading.style is not None:
+        lines += ["", format_style_ranking(reading.style)]
+        
+    else:
+        lines += ["", "Its style has not been classified yet: call identify_art_style."]
+        
+    return "\n".join(lines) + "\n"
+
+
+def format_style_ranking(result: StyleIdentification) -> str:
+    """Phrase the classifier's scores for the model, one line.
+
+    Args:
+        result: The classifier's answer.
+
+    Returns:
+        ``"Style classifier (model) ranks this work: Baroque 77%, ..."``.
+    """
+    ranked = ", ".join(
+        f"{item['label']} {item['probability']:.0%}" for item in result["predictions"]
+    )
+    return f"Style classifier ({result['model']}) ranks this work: {ranked}."

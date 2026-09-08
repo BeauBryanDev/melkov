@@ -9,7 +9,8 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.tools import tool
 
-from app.agent.prompts import MELKOV_SYSTEM_PROMPT
+from app.agent.prompts import MELKOV_SYSTEM_PROMPT, attachment_prompt, format_style_ranking
+from app.agent.readings import Reading
 from app.config import (
     ANTHROPIC_API_KEY,
     ANTHROPIC_MODEL,
@@ -19,7 +20,7 @@ from app.config import (
     LLM_THINKING_ENABLED,
 )
 ## All Melkov tools ##
-from app.tools.flux_generate import generate_artwork
+from app.tools.flux_generate import FluxRefusedError, generate_artwork
 from app.tools.met_search import search_met_artworks
 from app.tools.art_style_identifier import StyleIdentification, identify_art_style
 from app.tools.rag_retriever import query_art_history
@@ -44,17 +45,24 @@ class Artifacts(TypedDict):
     vlm_description: str | None
 
 
-def build_melkov_agent(current_image_b64: str | None = None) -> tuple[Any, Artifacts]:
+def build_melkov_agent(reading: Reading | None = None) -> tuple[Any, Artifacts]:
     """
-    Build a Melkov agent bound to this turn's uploaded image.
+    Build a Melkov agent bound to the artwork in this session's frame.
 
     A fresh agent is built per turn because the image is captured by closure.
     The construction itself is cheap — the expensive resources (embedding
     model, Chroma collection, Gradio client) are process-wide singletons
     inside the tool modules, not rebuilt here.
 
+    The reading is the cache entry for the artwork, whether it arrived with
+    this turn or an earlier one. Whatever the tools have already said about
+    it is inlined into the system prompt, so a follow-up question costs no
+    tool call; the two image tools fall back to the same cache when the model
+    calls them anyway, and write into it when they do real work.
+
     Args:
-        current_image_b64: The image uploaded with this turn, if any.
+        reading: The artwork in the frame, or ``None`` when the session has
+            never uploaded one.
 
     Returns:
         A ``(agent, artifacts)`` pair. Invoke the agent with
@@ -80,24 +88,27 @@ def build_melkov_agent(current_image_b64: str | None = None) -> tuple[Any, Artif
         discussed. Takes no arguments — the attached image is supplied
         automatically. Do not use it when no image was attached.
         """
-        if not current_image_b64:
+        if reading is None:
             return (
                 "No image was attached to this message. Ask the user to upload "
                 "one before analysing it."
             )
-        try:
-            description = describe_artwork(base64_to_pil(current_image_b64))
-        
-        except Exception as error:  # noqa: BLE001 - reported to the model, not raised
-            logger.exception("vlm_describe failed")
-            
-            return _tool_error("the vision model", error)
+        # Already read on an earlier turn: answer from the cache rather than
+        # waking the VLM Space again for an unchanged picture.
+        if reading.description is None:
+            try:
+                reading.description = describe_artwork(base64_to_pil(reading.image_b64))
+
+            except Exception as error:  # noqa: BLE001 - reported to the model, not raised
+                logger.exception("vlm_describe failed")
+
+                return _tool_error("the vision model", error)
 
         # Kept in the side-channel as well as returned: the frontend shows the
         # VLM's own words verbatim, not Melkov's paraphrase of them.
-        artifacts["vlm_description"] = description
+        artifacts["vlm_description"] = reading.description
 
-        return description
+        return reading.description
 
     @tool
     def generate_artwork_tool(prompt: str) -> str:
@@ -118,7 +129,21 @@ def build_melkov_agent(current_image_b64: str | None = None) -> tuple[Any, Artif
         """
         try:
             image = generate_artwork(prompt)
+
+        except FluxRefusedError as refusal:
+
+            logger.info("flux_generate refused the prompt (%s)", refusal.reason)
             
+            return (
+                f"GENERATION REFUSED ({refusal.reason}): the image generator's "
+                "content filter declined this prompt; the service itself is "
+                "working. Tell the user plainly that the generator would not "
+                "render this subject, then offer to try again with a rephrased "
+                "prompt — clothed or draped figures, a different framing, or "
+                "an emphasis on setting, palette and technique instead of the "
+                "body — and do so at once if they agree."
+            )
+
         except Exception as error:  # noqa: BLE001
             logger.exception("flux_generate failed")
             
@@ -255,27 +280,23 @@ def build_melkov_agent(current_image_b64: str | None = None) -> tuple[Any, Artif
         no arguments — the attached image is supplied automatically. Do not
         use it when no image was attached.
         """
-        if not current_image_b64:
+        if reading is None:
             return (
                 "No image was attached to this message. Ask the user to upload "
                 "one before classifying its style."
             )
-        try:
-            result = identify_art_style(base64_to_pil(current_image_b64))
+        if reading.style is None:
+            try:
+                reading.style = identify_art_style(base64_to_pil(reading.image_b64))
 
-        except Exception as error:  # noqa: BLE001
-            logger.exception("art_style_identifier failed")
+            except Exception as error:  # noqa: BLE001
+                logger.exception("art_style_identifier failed")
 
-            return _tool_error("the style classifier", error)
+                return _tool_error("the style classifier", error)
 
-        artifacts["style_analysis"] = result
+        artifacts["style_analysis"] = reading.style
 
-        ranked = ", ".join(
-            f"{item['label']} {item['probability']:.0%}"
-            for item in result["predictions"]
-        )
-        
-        return f"Style classifier ({result['model']}) ranks this work: {ranked}."
+        return format_style_ranking(reading.style)
     
     
     @tool
@@ -342,10 +363,9 @@ def build_melkov_agent(current_image_b64: str | None = None) -> tuple[Any, Artif
     agent = create_agent(
         model=model,
         tools=tools,
-        system_prompt=MELKOV_SYSTEM_PROMPT,
+        system_prompt=MELKOV_SYSTEM_PROMPT + attachment_prompt(reading),
     )
     return agent, artifacts
-
 
 def _year_of(date: str | None) -> str:
     """Year of a Wikidata timestamp like 1503-01-01T00:00:00Z."""
