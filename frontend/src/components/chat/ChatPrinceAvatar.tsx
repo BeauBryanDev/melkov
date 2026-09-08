@@ -1,4 +1,4 @@
-import melkovHead from "../../assets/melkov_head.svg";
+import melkovHead from "../../assets/melkov_avatar.svg";
 
 interface ChatPrinceAvatarProps {
   size?: number;

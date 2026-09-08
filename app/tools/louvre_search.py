@@ -1,4 +1,3 @@
-"""Louvre Museum search over Wikidata."""
 
 from __future__ import annotations
 
@@ -12,6 +11,7 @@ LOUVRE: Final[Museum] = Museum(qid="Q19675",
                                display_name="Louvre Museum"
                                )
 
+# Louvre Museum search over Wikidata.
 
 def louvre_search(query: str, 
                   limit: int = MUSEUM_SEARCH_LIMIT
@@ -19,9 +19,11 @@ def louvre_search(query: str,
     """Search Louvre Museum works by title or artist."""
     return search_museum(LOUVRE, 
                          query, 
-                         limit)
+                         limit
+                         )
 
 
+# For testing:
 if __name__ == "__main__":
     import json
     import sys

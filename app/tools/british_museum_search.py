@@ -1,4 +1,3 @@
-"""British Museum search over Wikidata."""
 
 from __future__ import annotations
 
@@ -13,15 +12,17 @@ BRITISH_MUSEUM: Final[Museum] = Museum(
     display_name="British Museum"
 )
 
+# British Museum search over Wikidata.
 
 def british_museum_search(query: str, 
                           limit: int = MUSEUM_SEARCH_LIMIT
                           ) -> dict[str, Any]:
     """Search British Museum works by title or artist."""
+    
     return search_museum(BRITISH_MUSEUM, query, limit)
 
 
-## for testing only ##
+# For testing only ##
 if __name__ == "__main__":
     
     import json
@@ -33,4 +34,6 @@ if __name__ == "__main__":
         
         raise SystemExit(1)
     
-    print(json.dumps(british_museum_search(" ".join(sys.argv[1:])), ensure_ascii=False, indent=2))
+    print(json.dumps(british_museum_search(" ".join(sys.argv[1:])), 
+                     ensure_ascii=False, 
+                     indent=2))

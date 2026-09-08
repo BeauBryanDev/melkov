@@ -39,6 +39,9 @@ sentence-transformers>=3.0
 einops>=0.7
 numpy>=1.26               # MMR re-rank in RAG/retrieval.py
 
+# Artist advisor (YouTube Data API v3)
+google-api-python-client>=2.118.0
+
 # Corpus build only (RAG phases 0-3); not needed to serve the API 
 # pymupdf>=1.24
 

@@ -20,7 +20,7 @@ export function ChatEmptyState({ hasArtwork }: ChatEmptyStateProps) {
       <p className="chat-empty-copy">
         {hasArtwork
           ? "The work is in the frame. Ask about its style, technique, period, or the history behind it."
-          : "Hang a painting in the frame, or ask Melkov to paint one, and begin a conversation about its style, technique, period, and historical context."}
+          : "Hang a painting in the frame or drop one here in the chat, or ask Melkov to paint one, and begin a conversation about its style, technique, period, and historical context."}
       </p>
     </div>
   );

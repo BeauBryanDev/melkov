@@ -4,11 +4,14 @@ interface ToolTraceProps {
   tools: ToolCallLog[];
 }
 
-/** Human wording for each of the agent's four skills. */
+/** Human wording for the agent's skills. */
 const LABELS: Record<string, string> = {
   [TOOL_NAMES.describe]: "Examined the canvas",
   [TOOL_NAMES.generate]: "Painted a new work",
   [TOOL_NAMES.met]: "Consulted the Met collection",
+  [TOOL_NAMES.louvre]: "Consulted the Louvre",
+  [TOOL_NAMES.britishMuseum]: "Consulted the British Museum",
+  [TOOL_NAMES.advice]: "Found studio lessons",
   [TOOL_NAMES.history]: "Consulted the art-history library",
 };
 

@@ -1,15 +1,22 @@
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ChatMessage as ChatMessageType } from "../../types/chat";
 import { ChatPrinceAvatar } from "./ChatPrinceAvatar";
 import { formatTime } from "../../utils/format";
 import { toDataUrl } from "../../utils/image";
 import { MetResults } from "./MetResults";
+import { VideoResults } from "./VideoResults";
+import { MuseumResults } from "../common/MuseumResults";
 import { ToolTrace } from "./ToolTrace";
 
 interface ChatMessageProps {
   message: ChatMessageType;
 }
+
+/** Every link in a reply opens in a new tab, so the consultation is never navigated away. */
+const MARKDOWN_COMPONENTS: Components = {
+  a: ({ node: _node, ...props }) => <a {...props} rel="noopener noreferrer" target="_blank" />,
+};
 
 /**
  * One turn of the consultation.
@@ -45,7 +52,9 @@ export function ChatMessage({ message }: ChatMessageProps) {
         <p className="chat-body">{message.content}</p>
       ) : (
         <div className="chat-body chat-body-rich">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+          <ReactMarkdown components={MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]}>
+            {message.content}
+          </ReactMarkdown>
         </div>
       )}
 
@@ -67,6 +76,13 @@ export function ChatMessage({ message }: ChatMessageProps) {
       ) : null}
 
       {message.metResults?.length ? <MetResults records={message.metResults} /> : null}
+      {message.louvreResults?.length ? (
+        <MuseumResults title="From the Louvre" works={message.louvreResults} />
+      ) : null}
+      {message.britishMuseumResults?.length ? (
+        <MuseumResults title="From the British Museum" works={message.britishMuseumResults} />
+      ) : null}
+      {message.artAdvice?.length ? <VideoResults videos={message.artAdvice} /> : null}
 
       {message.tools?.length ? <ToolTrace tools={message.tools} /> : null}
     </article>

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from typing import Any, Final
 
 import requests
@@ -26,7 +27,10 @@ class Museum:
     display_name: str
 
 
-def build_sparql_query(museum: Museum, query_text: str, limit: int) -> str:
+def build_sparql_query(museum: Museum, 
+                       query_text: str, 
+                       limit: int
+                       ) -> str:
     """SPARQL matching the title or the creator's label against query_text."""
     safe_query = query_text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
     # P195/P361*: works usually link to a department that is part of the museum.
@@ -56,13 +60,17 @@ def build_sparql_query(museum: Museum, query_text: str, limit: int) -> str:
     """
 
 
-def parse_bindings(museum: Museum, bindings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def parse_bindings(museum: Museum, 
+                   bindings: list[dict[str, Any]]
+                   ) -> list[dict[str, Any]]:
     """Convert raw SPARQL JSON bindings into the shared museum-result shape."""
     results: list[dict[str, Any]] = []
+    
     for row in bindings:
         # P973 is optional; the Wikidata entity page is always a working link.
         object_url = (
-            row.get("describedAtUrl", {}).get("value")
+            row.get("describedAtUrl", 
+                    {}).get("value")
             or row.get("item", {}).get("value")
         )
         results.append(
@@ -75,6 +83,12 @@ def parse_bindings(museum: Museum, bindings: list[dict[str, Any]]) -> list[dict[
                 "museum": f"{museum.display_name} (via Wikidata)",
             }
         )
+    # Sort by date, then title, then artist.
+    results.sort(key=lambda result: (result["date"] or "", 
+                                     result["title"] or "", 
+                                     result["artist"] or "")
+                 )
+    
     return results
 
 
@@ -82,10 +96,12 @@ def search_museum(museum: Museum,
                   query: str, 
                   limit: int = MUSEUM_SEARCH_LIMIT
                   ) -> dict[str, Any]:
-    """Search one museum. Returns {source, query, results, [error]}; never raises."""
+    """Search one museum. 
+    Returns {source, query, results, [error]}; never raises."""
     limit = max(1, 
                 min(int(limit), 
-                MAX_LIMIT))
+                MAX_LIMIT)
+                )
     
     envelope: dict[str, Any] = {"source": museum.source, 
                                 "query": query, "results": []
@@ -112,14 +128,22 @@ def search_museum(museum: Museum,
         
     except requests.exceptions.Timeout:
         envelope["error"] = f"{museum.display_name} search (Wikidata) timed out."
-        
+        logging.error(envelope["error"])
+         
     except requests.exceptions.JSONDecodeError as exc:
         envelope["error"] = f"{museum.display_name} search (Wikidata) returned malformed data: {exc}"
+        logging.error(envelope["error"])
         
     except requests.exceptions.RequestException as exc:
         envelope["error"] = f"{museum.display_name} search (Wikidata) request failed: {exc}"
+        logging.error(envelope["error"])
         
     except (ValueError, KeyError, AttributeError) as exc:
         envelope["error"] = f"{museum.display_name} search (Wikidata) returned malformed data: {exc}"
+        logging.error(envelope["error"])
         
+    # TODO: log the error
+    if "error" in envelope: 
+         logging.error(envelope["error"])
+    
     return envelope

@@ -9,28 +9,30 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-
+##  LLM Providers from Anthropic
 ANTHROPIC_API_KEY: Final[str] = os.getenv("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL: Final[str] = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5")
 # Melkov Main LLM as Clade-Sonnet-5
 _temperature_raw: Final[str] = os.getenv("LLM_TEMPERATURE", "").strip()
+# LLM Settings: temperature, effort, max tokens, and thinking mode.
 LLM_TEMPERATURE: Final[float | None] = (
     float(_temperature_raw) if _temperature_raw else None
 )  
-
+# SET  LOWER EFFORT ON CLAUDE-SONNET-5 TO SAVE TOKENS
+LLM_EFFORT: Final[str] = os.getenv("LLM_EFFORT", "low").strip()
 LLM_THINKING_ENABLED: Final[bool] = (
     os.getenv("LLM_THINKING_ENABLED", "false").strip().lower() == "true"
 )
-LLM_EFFORT: Final[str] = os.getenv("LLM_EFFORT", "low").strip()
 LLM_MAX_TOKENS: Final[int] = int(os.getenv("LLM_MAX_TOKENS", "1500"))
 
 # Melkov VLM fine-tuned Qwen2.5-VL-7B on a HF Space ZeroGPU
-HF_TOKEN: Final[str] = os.getenv("HF_TOKEN", "")
+HF_TOKEN: Final[str] = os.getenv("HF_TOKEN", "")  # this is my VLM QloRA in HF Spaces
 MELKOV_VLM_SPACE: Final[str] = os.getenv("MELKOV_VLM_SPACE", "beaunix/melkov")
 # The Space's only named endpoint. It takes a MultimodalTextbox payload  
 # {"text": ..., "files": [...]} — not a bare file. Verified with view_api().
 MELKOV_VLM_API_NAME: Final[str] = os.getenv("MELKOV_VLM_API_NAME", "/respond")
- 
+# TODO: I MUST EDIT THE GRADIO SPACE CODE IN app.py TO DECREASE THE TOKEN LIMIT
+# MY VLM IS GIVING LONG RESPONSES, SO I NEED TO SET A LOWER TOKEN LIMIT
 VLM_TIMEOUT: Final[float] = float(os.getenv("VLM_TIMEOUT", "180"))
 
 # FLUX image generation via the NVIDIA build API  
@@ -38,8 +40,8 @@ NVIDIA_API_KEY: Final[str] = os.getenv("NVIDIA_API_KEY", "")
 FLUX_INVOKE_URL: Final[str] = os.getenv(
     "FLUX_INVOKE_URL",
     "https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.2-klein-4b",
-)
-FLUX_TIMEOUT: Final[float] = float(os.getenv("FLUX_TIMEOUT", "120"))
+) # It change fron nvidia last week,  I had better check this evry week, nvidia is changing their API
+FLUX_TIMEOUT: Final[float] = float(os.getenv("FLUX_TIMEOUT", "120")) # all time out
 
 #  MET Museum Open Access collection  
 MET_API_BASE: Final[str] = "https://collectionapi.metmuseum.org/public/collection/v1"
@@ -74,6 +76,9 @@ RAG_DEVICE: Final[str] = os.getenv("RAG_DEVICE", "")
 
 MAX_SESSIONS: Final[int] = int(os.getenv("MAX_SESSIONS", "500"))
 MAX_HISTORY_MESSAGES: Final[int] = int(os.getenv("MAX_HISTORY_MESSAGES", "20"))
+# Cached per-image readings (VLM description + style scores + the bytes), LRU.
+# Each entry holds one upload's base64, so this bounds memory, not sessions.
+MAX_READINGS: Final[int] = int(os.getenv("MAX_READINGS", "100"))
 
 #  Request limits  
 # Uploaded images arrive as base64 in the JSON body; base64 inflates by ~4/3,
@@ -122,5 +127,6 @@ def verify_config() -> list[str]:
             f"CHROMA_PERSIST_DIR {CHROMA_PERSIST_DIR!r} not found — "
             "art-history retrieval is disabled."
         )
+        
         
     return warnings
