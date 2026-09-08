@@ -61,3 +61,28 @@ def test_image_key_is_absent_for_text_to_image(
     flux_generate.generate_artwork("a still life", init_image_b64=b64_image)
     body = json.loads(responses.calls[1].request.body)
     assert body["image"] == [b64_image]
+
+
+@responses.activate
+def test_content_filtered_response_is_a_refusal_not_an_envelope_change(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(flux_generate, "NVIDIA_API_KEY", "test-key")
+    # Verbatim shape from the live API on 2026-09-07: 200, empty payload.
+    responses.add(
+        responses.POST,
+        flux_generate.FLUX_INVOKE_URL,
+        json={"artifacts": [{"base64": "", "finishReason": "CONTENT_FILTERED", "seed": 1}]},
+        status=200,
+    )
+
+    with pytest.raises(flux_generate.FluxRefusedError, match="FLUX_REFUSED:CONTENT_FILTERED") as info:
+        flux_generate.generate_artwork("a reclining nude in the manner of Titian")
+    assert info.value.reason == "CONTENT_FILTERED"
+
+    # A genuinely empty envelope still reads as an envelope change.
+    responses.replace(
+        responses.POST, flux_generate.FLUX_INVOKE_URL, json={"artifacts": []}, status=200
+    )
+    with pytest.raises(RuntimeError, match="envelope may have changed"):
+        flux_generate.generate_artwork("a still life")

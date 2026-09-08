@@ -42,6 +42,7 @@ function App() {
           busy={chat.busy}
           hasArtwork={Boolean(artwork.previewUrl)}
           messages={chat.messages}
+          onFile={artwork.acceptFile}
           onNewConsultation={chat.startNewConsultation}
           onSend={chat.sendMessage}
           status={chat.status}

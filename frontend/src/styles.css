@@ -347,9 +347,21 @@ img {
 }
 
 .ornament {
-  width: 86px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
   opacity: 0.92;
   filter: drop-shadow(0 0 10px rgba(226, 182, 89, 0.28));
+}
+
+.ornament img {
+  width: 86px;
+  height: auto;
+}
+
+.ornament-brush {
+  width: 48px;
 }
 
 .ornament-right {
@@ -793,6 +805,44 @@ img {
   gap: 10px;
 }
 
+/* The chat is a drop target too: the same gold cue as the frame, drawn over
+   the whole panel so the visitor knows the drop will land regardless of
+   which inner element the pointer happens to be over. */
+.chat-drop-zone {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto auto;
+  gap: 10px;
+  border-radius: inherit;
+  transition: box-shadow 160ms ease;
+}
+
+.chat-drop-zone[data-state="dragging"] {
+  box-shadow:
+    inset 0 0 0 1px rgba(232, 199, 90, 0.35),
+    0 0 34px rgba(232, 199, 90, 0.22);
+}
+
+.chat-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-content: center;
+  border: 1px dashed var(--gold-high);
+  border-radius: inherit;
+  background: rgba(3, 8, 20, 0.72);
+  pointer-events: none;
+}
+
+.chat-drop-overlay p {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+  color: var(--gold-high);
+}
+
 .chat-rail {
   min-height: 320px;
   max-height: 62vh;
@@ -1091,6 +1141,11 @@ img {
   font-size: 1.02rem;
   color: var(--text);
   overflow-wrap: anywhere;
+}
+
+.video-card img {
+  width: 52px;
+  height: 52px;
 }
 
 .met-card-meta {

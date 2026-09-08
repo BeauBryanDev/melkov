@@ -94,12 +94,15 @@ def model_artifacts(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> Any:
 
 @pytest.fixture(autouse=True)
 def clear_sessions() -> Any:
-    """Empty the in-process chat history around every test."""
+    """Empty the in-process chat history and readings cache around every test."""
     from app import main
+    from app.agent import readings
 
     main._SESSIONS.clear()
+    readings.clear()
     yield
     main._SESSIONS.clear()
+    readings.clear()
 
 
 @pytest.fixture

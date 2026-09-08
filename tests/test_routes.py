@@ -6,6 +6,7 @@ import pytest
 from langchain_core.messages import AIMessage, BaseMessage
 
 from app import main
+from app.agent import readings
 from app.config import MAX_IMAGE_B64_CHARS
 from tests.conftest import FakeSession
 
@@ -24,13 +25,16 @@ class FakeAgent:
 
 
 def _patch_agent(monkeypatch: pytest.MonkeyPatch, agent: FakeAgent, artifacts: dict[str, Any]) -> None:
-    monkeypatch.setattr(main, "build_melkov_agent", lambda current_image_b64=None: (agent, artifacts))
+    monkeypatch.setattr(main, "build_melkov_agent", lambda reading=None: (agent, artifacts))
 
 
 def _empty_artifacts() -> dict[str, Any]:
     return {
         "generated_image_b64": None,
         "met_results": None,
+        "louvre_results": None,
+        "british_museum_results": None,
+        "art_advice": None,
         "style_analysis": None,
         "vlm_description": None,
     }
@@ -45,7 +49,10 @@ def test_health_and_session_lifecycle(client: Any) -> None:
     main._SESSIONS["s1"] = []
     assert client.get("/health").json()["active_sessions"] == 1
 
+    readings.remember("s1", "aGVsbG8=")
     assert client.delete("/session/s1").json()["status"] == "cleared"
+    # Clearing the session forgets which artwork was in its frame.
+    assert readings.current("s1") is None
     # Idempotent: an unknown id is reported, never a 404.
     second = client.delete("/session/s1")
     assert second.status_code == 200
@@ -103,3 +110,35 @@ def test_chat_carries_artifacts_and_fails_safely(
     failed = client.post("/chat", json={"message": "x", "session_id": "s1"})
     assert failed.status_code == 502
     assert "sk-ant-secret" not in failed.json()["detail"]
+
+
+def test_follow_up_turn_without_bytes_still_sees_the_artwork(
+    client: Any, monkeypatch: pytest.MonkeyPatch, b64_image: str, fake_onnx: FakeSession
+) -> None:
+    seen: list[Any] = []
+
+    def capture(reading: Any = None) -> Any:
+        seen.append(reading)
+        return FakeAgent(), _empty_artifacts()
+
+    monkeypatch.setattr(main, "build_melkov_agent", capture)
+
+    first = client.post(
+        "/chat", json={"message": "what is this?", "session_id": "s1", "image_base64": b64_image}
+    ).json()
+    second = client.post("/chat", json={"message": "and the period?", "session_id": "s1"}).json()
+
+    # Same reading both turns, resolved from the session on the silent one.
+    assert seen[0] is seen[1]
+    assert seen[0].image_hash == readings.image_hash(b64_image)
+    # The backstop scored the image once and served the cached scores after.
+    assert first["style_analysis"] == second["style_analysis"]
+    assert len(fake_onnx.calls) == 1
+
+    # A different session has no artwork, and a new upload replaces the old.
+    client.post("/chat", json={"message": "hello", "session_id": "s2"})
+    assert seen[2] is None
+    client.post(
+        "/chat", json={"message": "now this", "session_id": "s1", "image_base64": b64_image[:-4] + "AAAA"}
+    )
+    assert seen[3] is not seen[0]

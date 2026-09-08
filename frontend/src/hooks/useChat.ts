@@ -76,6 +76,9 @@ export function useChat() {
           tools: response.tools_used,
           generatedImage: response.generated_image_base64,
           metResults: response.met_results,
+          louvreResults: response.louvre_results,
+          britishMuseumResults: response.british_museum_results,
+          artAdvice: response.art_advice,
         });
         setStatus("idle");
         applyArtifacts(response);

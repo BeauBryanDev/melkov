@@ -27,6 +27,12 @@ export interface ChatResponseBody {
   tools_used: ToolCallLog[];
   generated_image_base64: string | null;
   met_results: MetRecord[] | null;
+  /** Louvre works via Wikidata; non-null only when that tool ran. */
+  louvre_results: MuseumWork[] | null;
+  /** British Museum works via Wikidata; non-null only when that tool ran. */
+  british_museum_results: MuseumWork[] | null;
+  /** Technique videos from trusted channels; non-null only when that tool ran. */
+  art_advice: ArtAdviceVideo[] | null;
   /**
    * The fine-tuned Qwen2.5-VL's description of the attached image, verbatim.
    * Non-null only when the vision tool ran and succeeded on this turn.
@@ -98,11 +104,33 @@ export interface MetRecord {
   is_public_domain?: boolean | null;
 }
 
+/** One work in the shared museum shape (`app/tools/wikidata_museum.py`); MET maps onto it. */
+export interface MuseumWork {
+  title?: string | null;
+  artist?: string | null;
+  date?: string | null;
+  medium?: string | null;
+  image_url?: string | null;
+  object_url?: string | null;
+  museum?: string | null;
+}
+
+/** One video from `app/tools/artist_advisor.py`. */
+export interface ArtAdviceVideo {
+  title: string;
+  channel: string;
+  url: string;
+  description_snippet: string;
+}
+
 /** The names the backend reports in `tools_used[].tool`. */
 export const TOOL_NAMES = {
   describe: "describe_artwork_tool",
   generate: "generate_artwork_tool",
   met: "search_met_artworks_tool",
+  louvre: "search_louvre_artworks_tool",
+  britishMuseum: "search_british_museum_artworks_tool",
+  advice: "get_art_advice_tool",
   history: "query_art_history_tool",
   style: "identify_art_style_tool",
 } as const;

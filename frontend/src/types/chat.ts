@@ -1,4 +1,4 @@
-import type { MetRecord, ToolCallLog } from "./api";
+import type { ArtAdviceVideo, MetRecord, MuseumWork, ToolCallLog } from "./api";
 
 export type ChatRole = "user" | "assistant";
 
@@ -24,6 +24,9 @@ export interface ChatMessage {
   generatedImage?: string | null;
   /** MET records returned for this turn (assistant turns only). */
   metResults?: MetRecord[] | null;
+  louvreResults?: MuseumWork[] | null;
+  britishMuseumResults?: MuseumWork[] | null;
+  artAdvice?: ArtAdviceVideo[] | null;
   /** Set when the turn failed; rendered in the restrained error style. */
   failed?: boolean;
 }
