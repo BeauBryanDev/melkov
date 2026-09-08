@@ -10,7 +10,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
-from app.agent.orchestrator import build_melkov_agent, extract_reply, extract_tool_calls
+from app.agent import readings
+from app.agent.orchestrator import ( build_melkov_agent, 
+                                    extract_reply, 
+                                    extract_tool_calls )
+from app.agent.readings import Reading
 from app.config import (
     CORS_ORIGINS,
     MAX_HISTORY_MESSAGES,
@@ -25,6 +29,7 @@ from app.utils.image_utils import base64_to_pil
 from app.schemas.chat import ChatRequest, ChatResponse, ToolCallLog
  
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+
 logger = logging.getLogger("melkov")
 
 @asynccontextmanager
@@ -103,16 +108,32 @@ def chat(request: ChatRequest) -> ChatResponse:
         )
 
     history = _get_history(request.session_id)
-    agent, artifacts = build_melkov_agent(current_image_b64=request.image_base64)
+
+    # An upload replaces the artwork in the frame; silence keeps it. The
+    # frontend sends the image once, so a turn with no bytes still has the
+    # artwork — and everything the tools already said about it — in front of
+    # it through the cached reading.
+    reading: Reading | None
+    
+    if request.image_base64:
+        reading = readings.remember(request.session_id, request.image_base64)
+        
+    else:
+        reading = readings.current(request.session_id)
+
+    agent, artifacts = build_melkov_agent(reading=reading)
 
     try:
         result = agent.invoke(
-            {"messages": [*history, HumanMessage(content=request.message)]}
+            {"messages": [*history, 
+                          HumanMessage(content=request.message)
+                          ]}
         )
     except Exception as error:  # noqa: BLE001
         # The detail is logged, never returned: exception text from the model
         # provider can carry request URLs and key fragments.
-        logger.exception("Turn failed for session %s", request.session_id)
+        logger.exception("Turn failed for session %s", 
+                         request.session_id)
         
         raise HTTPException(
             status_code=502,
@@ -143,32 +164,43 @@ def chat(request: ChatRequest) -> ChatResponse:
         louvre_results=artifacts["louvre_results"],
         british_museum_results=artifacts["british_museum_results"],
         art_advice=artifacts["art_advice"],
-        style_analysis=artifacts["style_analysis"]
-        or _classify_or_none(request.image_base64),
+        style_analysis=artifacts["style_analysis"] or _classify_or_none(reading),
         vlm_description=artifacts["vlm_description"],
     )
 
 
-def _classify_or_none(image_b64: str | None) -> StyleIdentification | None:
+def _classify_or_none(reading: Reading | None) -> StyleIdentification | None:
     """
-    Score an attached image even when the agent declined to call the tool.
+    Score the artwork in the frame even when the agent declined to call the tool.
 
     The prompt asks Melkov to always classify an attachment, but a prompt
     instruction is a request the model can decline — and the confidence panel
-    would then sit empty. This backstop is a local CPU pass with no API call,
-    and every failure is swallowed: it must never turn a good turn into a 502.
+    would then sit empty. Scores already in the cache are reused; otherwise
+    this is a local CPU pass with no API call, written back to the cache so
+    it runs once per image. Every failure is swallowed: it must never turn a
+    good turn into a 502.
 
+    Args:
+        reading: The artwork in the frame, or ``None``.
+
+    Returns:
+        The classifier's answer, or ``None`` when there is nothing to score
+        or scoring failed.
     """
-    if not image_b64:
-        
+    if reading is None:
         return None
     
+    if reading.style is not None:
+        return reading.style
+
     try:
-        return identify_art_style(base64_to_pil(image_b64))
-    
+        reading.style = identify_art_style(base64_to_pil(reading.image_b64))
+
     except Exception:  # noqa: BLE001 - the panel degrades, the turn does not
         logger.exception("Backstop classification failed")
         return None
+
+    return reading.style
 
 
 @app.delete("/session/{session_id}")
@@ -182,5 +214,7 @@ def clear_session(session_id: str) -> dict[str, str]:
         Whether a session was actually removed.
     """
     existed = _SESSIONS.pop(session_id, None) is not None
+    
+    readings.forget_session(session_id)
     
     return {"status": "cleared" if existed else "not found", "session_id": session_id}
