@@ -15,8 +15,8 @@ from app.utils.image_utils import base64_to_pil
 
 """Image generation through FLUX on the NVIDIA build API.
 [ only for academic  purpuses and not for production use]
-TODO:  keep an eyes on NVIIDA build API, becuase they usually changes
-their endpoint"""
+TODO: Had better to keep an eyes on NVIIDA build API, 
+becuase they usually changes their endpoint"""
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +28,28 @@ MAX_PROMPT_CHARS: Final[int] = 800
 # Keys that have held the base64 payload across API revisions, in the order
 # they are worth trying.
 _IMAGE_KEYS: Final[tuple[str, ...]] = ("image", "b64_json", "base64")
+# The one finish reason that carries an image. Anything else on a 200 is a
+# refusal or an upstream fault, and the payload is legitimately empty.
+_FINISH_OK: Final[str] = "SUCCESS"
+
+
+class FluxRefusedError(RuntimeError):
+    """The API accepted the request but declined to render it.
+
+    A filtered generation is not an HTTP error: the response is 200 with
+    ``finishReason: "CONTENT_FILTERED"`` and an empty payload. The message is
+    ``FLUX_REFUSED:<reason>`` so the orchestrator can tell a refusal — which
+    calls for a rephrased prompt — from an outage, which does not.
+    """
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(f"FLUX_REFUSED:{reason}")
 
 
 def _session() -> requests.Session:
-    """Build a session that retries transient upstream failures.
+    """
+    Build a session that retries transient upstream failures.
 
     Returns:
         A configured session.
@@ -50,10 +68,10 @@ def _session() -> requests.Session:
 
 def generate_artwork(
     prompt: str,
-    width: int = 1024,
-    height: int = 1024,
+    width: int = 896,
+    height: int = 896,
     steps: int = 4,
-    seed: int | None = None,
+    seed: int | None = 42,
     init_image_b64: str | None = None,
 ) -> Image.Image:
     """Generate an artwork from a text prompt.
@@ -69,12 +87,9 @@ def generate_artwork(
     Returns:
         The generated image.
 
-    Raises:
-        RuntimeError: If the key is unset or the response holds no image.
-        requests.HTTPError: If the API rejects the request.
     """
     if not NVIDIA_API_KEY:
-        raise RuntimeError("NVIDIA_API_KEY is not set — image generation is disabled.")
+        raise RuntimeError("NVIDIA_API_KEY is not set —> image generation is disabled.")
 
     payload: dict[str, Any] = {
         "prompt": _fit_prompt(prompt),
@@ -83,9 +98,7 @@ def generate_artwork(
         "seed": seed if seed is not None else random.randint(0, MAX_SEED),
         "steps": steps,
     }
-    # The `image` key must be absent for text-to-image. Sending a placeholder
-    # empty string is rejected with 422 "Image has been provided in the
-    # invalid form" rather than being treated as "no image".
+
     if init_image_b64:
         
         payload["image"] = [init_image_b64]
@@ -99,18 +112,68 @@ def generate_artwork(
         },
         json=payload,
         timeout=FLUX_TIMEOUT,
-    )
+    ) # 
     response.raise_for_status()
+    body = response.json()
+    _raise_for_finish_reason(body)
 
-    image_b64 = _find_image(response.json())
-    
+    image_b64 = _find_image(body)
+
     if not image_b64:
+        # Logged with the payload scrubbed: the shape is what matters when the
+        # envelope really has changed, and a base64 blob would bury it.
+        logger.error("FLUX envelope held no image: %s", _scrub(body))
         
         raise RuntimeError(
             "FLUX response contained no image payload; the API envelope may "
             "have changed."
         )
+        
     return base64_to_pil(image_b64)
+
+
+def _raise_for_finish_reason(body: Any) -> None:
+    """Reject a 200 whose artifacts report anything but success.
+
+    Checked before the payload search on purpose: a refusal has an empty
+    payload too, and searching first turned every filtered prompt into the
+    misleading "envelope may have changed" error.
+
+    Args:
+        body: The decoded response.
+
+    """
+    if not isinstance(body, dict):
+        return
+    
+    artifacts = body.get("artifacts")
+    
+    if not isinstance(artifacts, list):
+        return
+    
+    for artifact in artifacts:
+        
+        if not isinstance(artifact, dict):
+            continue
+        
+        reason = artifact.get("finishReason")
+        
+        if reason is not None and reason != _FINISH_OK:
+            raise FluxRefusedError(str(reason))
+
+
+def _scrub(body: Any) -> Any:
+    """Replace long strings with their length, so a payload can be logged."""
+    if isinstance(body, dict):
+        return {key: _scrub(value) for key, value in body.items()}
+    
+    if isinstance(body, list):
+        return [_scrub(item) for item in body]
+    
+    if isinstance(body, str) and len(body) > 64:
+        return f"<str len={len(body)}>"
+    
+    return body
 
 
 def _fit_prompt(prompt: str) -> str:
@@ -132,12 +195,16 @@ def _fit_prompt(prompt: str) -> str:
         return prompt
 
     head = prompt[:MAX_PROMPT_CHARS]
+    
     for separator in (". ", "; ", ", "):
+        
         cut = head.rfind(separator)
         
         if cut > MAX_PROMPT_CHARS * 0.75:
             
-            logger.info("Trimmed prompt from %d to %d chars", len(prompt), cut)
+            logger.info("Trimmed prompt from %d to %d chars", 
+                        len(prompt), cut)
+            
             return head[:cut].rstrip(" ,;")
         
     return head.rsplit(" ", 1)[0]
@@ -145,9 +212,6 @@ def _fit_prompt(prompt: str) -> str:
 
 def _find_image(body: Any, depth: int = 0) -> str | None:
     """Search a decoded response for a base64 image payload.
-
-    Walks the structure instead of indexing a fixed path, since the envelope
-    varies by model and revision.
 
     Args:
         body: Decoded JSON, at any nesting level.
