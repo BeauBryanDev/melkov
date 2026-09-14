@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef } from "react";
+import { readArtwork } from "../services/artwork.service";
 import { ChatError, clearSession, sendChatMessage } from "../services/chat.service";
 import { getSessionId, resetSessionId } from "../services/session.service";
 import { useAnalysisStore } from "../stores/analysis.store";
@@ -9,7 +10,7 @@ import { MELKOV_NAME, VISITOR_NAME } from "../utils/constant";
 import { stripDataUrlPrefix, toDataUrl } from "../utils/image";
 
 /**
- * Drives one conversational turn against `POST /chat`.
+ * Drives one conversational turn against POST /chat.
  *
  * Everything the panels display originates here: the reply text, the tools
  * the agent reached for, the FLUX image, the MET records, and the curatorial
@@ -23,6 +24,68 @@ export function useChat() {
   // The image this session has already uploaded, so it is sent once rather
   // than with every message. Cleared when the consultation resets.
   const sentImageRef = useRef<string | null>(null);
+  // The upload-time read in flight, if any, keyed by the image it is reading.
+  // A turn sent while it runs waits for it rather than racing the Space.
+  const primingRef = useRef<{ image: string; promise: Promise<boolean> } | null>(null);
+  // The image last shown inside a user bubble. The artwork stays in the frame
+  // for the whole consultation, so the thumbnail appears once, on the first
+  // message about it, and not again on every later question.
+  const shownImageRef = useRef<string | null>(null);
+
+  /**
+   * Read the artwork in the frame before the first question about it.
+   *
+   * Called when the visitor starts typing — intent, not the drop itself, so
+   * a picture hung and replaced never wakes the GPU Space, and the daily
+   * quota goes only to images someone is about to ask about. The backend
+   * caches by image hash, so this never runs a model twice for one image.
+   * On success the image counts as sent, and the confidence and reading
+   * panels fill before the question is even finished.
+   */
+  const primeArtwork = useCallback(() => {
+    const attachment = useArtworkStore.getState().imageBase64;
+    if (
+      attachment === null ||
+      attachment === sentImageRef.current ||
+      primingRef.current?.image === attachment ||
+      status === "thinking" ||
+      status === "analyzing"
+    ) {
+      return;
+    }
+
+    useArtworkStore.getState().setStatus("analyzing");
+    const promise = readArtwork({ session_id: sessionId, image_base64: attachment })
+      .then((reading) => {
+        sentImageRef.current = attachment;
+        useAnalysisStore.getState().setReading({
+          text: reading.vlm_description,
+          source: "Qwen2.5-VL-7B · fine-tuned",
+        });
+        if (reading.style_analysis) {
+          useAnalysisStore.getState().setStyles(
+            reading.style_analysis.predictions.map((prediction) => ({
+              label: prediction.label,
+              score: prediction.probability,
+            })),
+          );
+        }
+        return true;
+      })
+      // A failed read is not an error the visitor needs to see: the image
+      // simply travels with the next turn, as it did before this existed.
+      .catch(() => false)
+      .finally(() => {
+        if (primingRef.current?.image === attachment) {
+          primingRef.current = null;
+        }
+        const current = useArtworkStore.getState();
+        if (current.status === "analyzing" && current.imageBase64 === attachment) {
+          current.setStatus("ready");
+        }
+      });
+    primingRef.current = { image: attachment, promise };
+  }, [sessionId, status]);
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -34,6 +97,14 @@ export function useChat() {
       const artwork = useArtworkStore.getState();
       const attachment = artwork.imageBase64;
 
+      // If the upload-time read is still running for this very image, let it
+      // finish: the turn then finds the description cached and skips the
+      // Space entirely, instead of a second call queuing behind the first.
+      if (attachment !== null && primingRef.current?.image === attachment) {
+        setStatus("analyzing");
+        await primingRef.current.promise;
+      }
+
       // The frame keeps the artwork, so every turn would otherwise re-upload
       // the same megabytes to tell the backend something it already knows.
       // The backend treats "no image, but a reading cached for this session"
@@ -43,19 +114,22 @@ export function useChat() {
       const alreadySent = attachment !== null && attachment === sentImageRef.current;
       const outgoingImage = alreadySent ? null : attachment;
 
+      const firstMessageAboutImage = attachment !== null && attachment !== shownImageRef.current;
       addMessage({
         role: "user",
         name: VISITOR_NAME,
         content: message,
-        attachment,
+        attachment: firstMessageAboutImage ? attachment : null,
       });
+      shownImageRef.current = attachment;
 
-      // A turn carrying an image will very likely route to the VLM Space,
+      // A turn carrying image bytes will very likely route to the VLM Space,
       // which cold-starts; the panel says "examining" rather than "thinking"
-      // so the longer wait reads as deliberate rather than broken.
-      setStatus(attachment ? "analyzing" : "thinking");
+      // so the longer wait reads as deliberate rather than broken. An image
+      // already read at upload time costs no such wait, so it just "thinks".
+      setStatus(outgoingImage ? "analyzing" : "thinking");
       setError(null);
-      if (attachment) {
+      if (outgoingImage) {
         useArtworkStore.getState().setStatus("analyzing");
       }
 
@@ -109,6 +183,8 @@ export function useChat() {
     resetSessionId();
     // The new session's backend cache is empty, so the next image must travel.
     sentImageRef.current = null;
+    primingRef.current = null;
+    shownImageRef.current = null;
     resetChat();
     useAnalysisStore.getState().resetAnalysis();
     useArtworkStore.getState().clearArtwork();
@@ -121,6 +197,7 @@ export function useChat() {
     sessionId,
     busy: status === "thinking" || status === "analyzing",
     sendMessage,
+    primeArtwork,
     startNewConsultation,
   };
 }

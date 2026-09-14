@@ -8,10 +8,6 @@ interface UseDragDropOptions {
 
 /**
  * Drag-and-drop handlers for the frame.
- *
- * `dragCounter` exists because `dragenter`/`dragleave` fire for every nested
- * element the pointer crosses; counting them keeps the gold drag highlight
- * from flickering as the pointer moves over the frame's inner ornaments.
  */
 export function useDragDrop({ onFile, disabled = false }: UseDragDropOptions) {
   const [isDragging, setIsDragging] = useState(false);

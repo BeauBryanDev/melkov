@@ -1,17 +1,18 @@
 import { useCallback } from "react";
 import { useArtworkStore } from "../stores/artwork.store";
-import { fileToDataUrl, stripDataUrlPrefix, toDataUrl } from "../utils/image";
+import {
+  downscaleDataUrl,
+  fileToDataUrl,
+  stripDataUrlPrefix,
+  toDataUrl,
+} from "../utils/image";
 import { rejectionReason } from "../utils/validators";
 
 /**
  * Places artwork in the frame.
- *
- * Reading the file produces a `data:` URL that serves as both the on-screen
- * preview and — with its prefix stripped — the `image_base64` sent with the
- * next chat turn. No analysis is fabricated here: the frame holds the picture
- * and nothing else until Melkov actually says something about it.
  */
 export function useArtwork() {
+  // The store is a singleton, so the hooks are too.
   const store = useArtworkStore();
   const { setStatus, setError, placeArtwork, clearArtwork } = store;
 
@@ -29,7 +30,9 @@ export function useArtwork() {
 
       setStatus("uploading");
       try {
-        const dataUrl = await fileToDataUrl(file);
+        // Downscaled before it becomes base64: the backend resizes to 896 px
+        // anyway, so a full-resolution upload only slows the wire.
+        const dataUrl = await downscaleDataUrl(await fileToDataUrl(file));
         placeArtwork({
           imageBase64: stripDataUrlPrefix(dataUrl),
           previewUrl: dataUrl,
