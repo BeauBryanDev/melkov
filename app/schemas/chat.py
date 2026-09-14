@@ -26,7 +26,7 @@ class StyleIdentification(BaseModel):
     predictions: list[StylePrediction] = Field(
         default_factory=list,
         description="Ranked highest probability first.",
-    )
+    ) # CNN softmax output layer top 3 probs predictions
     top_k: int = Field(description="How many predictions were requested.")
 
 

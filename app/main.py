@@ -22,13 +22,16 @@ from app.config import (
     MAX_SESSIONS,
     verify_config,
 )
+from app.routers.artwork import router as artwork_router
 from app.routers.health import router as health_router
 from app.routers.style import router as style_router
 from app.tools.art_style_identifier import StyleIdentification, identify_art_style
 from app.utils.image_utils import base64_to_pil
 from app.schemas.chat import ChatRequest, ChatResponse, ToolCallLog
  
-logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+logging.basicConfig(level=logging.INFO, 
+                    format="%(levelname)s %(name)s: %(message)s"
+                    )
 
 logger = logging.getLogger("melkov")
 
@@ -58,6 +61,11 @@ app.include_router(style_router)
 
 # Mounts GET /health.
 app.include_router(health_router)
+
+# Mounts POST /artwork/read: fills the readings cache when an upload lands, so
+# the first /chat on a new image finds the description and scores already
+# inlined and skips both the VLM wait and the tool round-trip.
+app.include_router(artwork_router)
 
 # Ordered so the least recently used session is the one evicted at capacity.
 _SESSIONS: OrderedDict[str, list[BaseMessage]] = OrderedDict()
@@ -142,6 +150,7 @@ def chat(request: ChatRequest) -> ChatResponse:
 
     messages: list[BaseMessage] = result["messages"]
     reply = extract_reply(messages)
+    _log_token_usage(request.session_id, messages)
 
     # Only the user/assistant text is retained. Tool call and result messages
     # are dropped: they are large, and replaying them would invite the model
@@ -167,6 +176,49 @@ def chat(request: ChatRequest) -> ChatResponse:
         style_analysis=artifacts["style_analysis"] or _classify_or_none(reading),
         vlm_description=artifacts["vlm_description"],
     )
+
+
+def _log_token_usage(session_id: str, 
+                     messages: list[BaseMessage]
+                     ) -> None:
+    """Log the turn's token bill, split into cached and uncached input.
+
+    One INFO line per turn. chached_read staying at zero across turns means
+    prompt caching is not takingprefix too short, or a silent invalidator
+    it is the only way to tell from outside. Never raises.
+    """
+    try:
+        usage = {"input": 0, "output": 0, 
+                 "cache_read": 0, 
+                 "cache_creation": 0
+                 }
+        calls = 0
+        for message in messages:
+            
+            meta = getattr(message, "usage_metadata", None)
+            
+            if not meta:
+                continue
+            
+            calls += 1
+            usage["input"] += meta.get("input_tokens", 0) or 0
+            usage["output"] += meta.get("output_tokens", 0) or 0
+            details = meta.get("input_token_details") or {}
+            usage["cache_read"] += details.get("cache_read", 0) or 0
+            usage["cache_creation"] += details.get("cache_creation", 0) or 0
+            
+        logger.info(
+            "Tokens for session %s: %d LLM call(s), input=%d (cache_read=%d, "
+            "cache_creation=%d), output=%d",
+            session_id,
+            calls,
+            usage["input"],
+            usage["cache_read"],
+            usage["cache_creation"],
+            usage["output"],
+        )
+    except Exception:  # noqa: BLE001 - a log line must never fail a turn
+        logger.debug("Token usage unavailable for session %s", session_id)
 
 
 def _classify_or_none(reading: Reading | None) -> StyleIdentification | None:
@@ -217,4 +269,7 @@ def clear_session(session_id: str) -> dict[str, str]:
     
     readings.forget_session(session_id)
     
-    return {"status": "cleared" if existed else "not found", "session_id": session_id}
+    return {
+        "status": "cleared" if existed else "not found",
+            "session_id": session_id
+            }
