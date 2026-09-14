@@ -1,9 +1,6 @@
 /**
- * Wire types for the Melkov backend (`app/schemas/chat.py`).
+ * Wire types for the Melkov backend app/schemas/chat.py.
  *
- * These mirror the FastAPI models exactly. If a field is not listed here, the
- * backend does not send it — the UI must render an empty state rather than
- * invent a value.
  */
 
 /** A single tool invocation, as reported by `ChatResponse.tools_used`. */
@@ -68,6 +65,24 @@ export interface StyleIdentification {
   /** Ranked highest probability first. */
   predictions: StyleProbability[];
   top_k: number;
+}
+
+/** POST /artwork/read request body (`app/schemas/artwork.py`). */
+export interface ArtworkReadRequestBody {
+  session_id: string;
+  /** Raw base64, with or without a `data:` prefix. */
+  image_base64: string;
+}
+
+/** POST /artwork/read response body. */
+export interface ArtworkReadResponseBody {
+  session_id: string;
+  /** The vision model's reading, verbatim. */
+  vlm_description: string;
+  /** Null only when the classifier failed; `/chat` backstops it. */
+  style_analysis: StyleIdentification | null;
+  /** True when the image had been read before and no model ran. */
+  cached: boolean;
 }
 
 /** POST /style/identify request body. */

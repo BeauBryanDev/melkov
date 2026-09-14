@@ -24,6 +24,65 @@ export function fileToDataUrl(file: File): Promise<string> {
 }
 
 /**
+ * Longest side of an upload after downscaling.
+ *
+ * The backend resizes to 896 px before the VLM sees it and the classifier
+ * works at a fraction of that, so pixels beyond this never reach a model —
+ * they only make the base64 body bigger and the upload slower. 1024 keeps a
+ * little margin over 896 so the preview in the frame still looks crisp.
+ */
+export const MAX_UPLOAD_DIM = 1024;
+
+/** JPEG quality for the downscaled upload; visually lossless for paintings. */
+const UPLOAD_JPEG_QUALITY = 0.9;
+
+/**
+ * Shrink an image so its longest side is at most `maxDim`, as a JPEG data URL.
+ *
+ * An image already within the limit is returned untouched, bytes and format
+ * included. Any decoding or canvas failure also returns the original: a
+ * downscale is an optimisation, never a reason to refuse a picture.
+ *
+ * @param dataUrl The image as read from the file.
+ * @param maxDim Longest side allowed, in pixels.
+ */
+export async function downscaleDataUrl(
+  dataUrl: string,
+  maxDim = MAX_UPLOAD_DIM,
+): Promise<string> {
+  try {
+    const image = await loadImage(dataUrl);
+    const scale = maxDim / Math.max(image.naturalWidth, image.naturalHeight);
+    if (!(scale < 1)) {
+      return dataUrl;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(image.naturalWidth * scale);
+    canvas.height = Math.round(image.naturalHeight * scale);
+    const context = canvas.getContext("2d");
+    if (!context) {
+      return dataUrl;
+    }
+    // A white ground under transparent PNGs, since JPEG has no alpha.
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", UPLOAD_JPEG_QUALITY);
+  } catch {
+    return dataUrl;
+  }
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("The image could not be decoded."));
+    image.src = src;
+  });
+}
+
+/**
  * Strip a `data:` prefix, leaving raw base64.
  *
  * The backend accepts either form, but sending the bare payload keeps the
