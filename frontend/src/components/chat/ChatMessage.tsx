@@ -8,6 +8,7 @@ import { MetResults } from "./MetResults";
 import { VideoResults } from "./VideoResults";
 import { MuseumResults } from "../common/MuseumResults";
 import { ToolTrace } from "./ToolTrace";
+import { useRevealedText } from "./useRevealedText";
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -20,15 +21,16 @@ const MARKDOWN_COMPONENTS: Components = {
 
 /**
  * One turn of the consultation.
- *
- * Melkov's replies carry the gold accent, the portrait, and full width; the
- * visitor's are narrower and quieter, so the expert's voice stays dominant
- * (FRONTEND_SPEC §15, §16). Replies are markdown because the agent writes
- * emphasis and lists, which would otherwise show as literal asterisks.
  */
 export function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === "user";
   const time = formatTime(message.timestamp);
+  // A freshly arrived reply is typed out over a couple of seconds; the
+  // visitor's own message, a failed turn, and restored history show at once.
+  const { text: replyText, revealing } = useRevealedText(
+    isUser || message.failed ? "" : message.content,
+    message.timestamp,
+  );
 
   return (
     <article
@@ -50,10 +52,16 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
       {isUser ? (
         <p className="chat-body">{message.content}</p>
-      ) : (
+      ) : message.failed ? (
         <div className="chat-body chat-body-rich">
           <ReactMarkdown components={MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]}>
             {message.content}
+          </ReactMarkdown>
+        </div>
+      ) : (
+        <div className={`chat-body chat-body-rich${revealing ? " chat-body-revealing" : ""}`}>
+          <ReactMarkdown components={MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]}>
+            {replyText}
           </ReactMarkdown>
         </div>
       )}

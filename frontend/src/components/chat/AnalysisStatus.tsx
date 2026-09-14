@@ -10,11 +10,7 @@ interface AnalysisStatusProps {
 
 /**
  * What Melkov is doing while the visitor waits.
- *
- * FRONTEND_SPEC §19 forbids faked progress, and `POST /chat` returns only
- * once the whole turn is done. So nothing here is a progress bar: the
- * elapsed count is measured, and the rest is motion — a shimmer across the
- * bubble and the typing dots — that says "still working", not "nearly there".
+
  */
 export function AnalysisStatus({ status }: AnalysisStatusProps) {
   const examining = status === "analyzing";

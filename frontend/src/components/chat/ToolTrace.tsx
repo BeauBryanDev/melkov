@@ -17,11 +17,6 @@ const LABELS: Record<string, string> = {
 
 /**
  * Which skills produced this reply.
- *
- * Shown because it is the visitor's evidence that a remark about the picture
- * came from Melkov's trained eye rather than from prose alone — the
- * orchestrator never sees the attachment, so "Examined the canvas" is a real
- * guarantee, not decoration.
  */
 export function ToolTrace({ tools }: ToolTraceProps) {
   const labels = Array.from(

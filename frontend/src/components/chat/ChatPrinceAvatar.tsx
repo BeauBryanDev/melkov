@@ -7,9 +7,6 @@ interface ChatPrinceAvatarProps {
 
 /**
  * Melkov's portrait in the conversation.
- *
- * Uses the same `melkov_head.svg` as the masthead, so the expert wears one
- * face throughout the atelier rather than a second, drawn-in-code likeness.
  */
 export function ChatPrinceAvatar({ size = 34, className }: ChatPrinceAvatarProps) {
   return (

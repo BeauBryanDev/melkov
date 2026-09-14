@@ -15,9 +15,6 @@ interface ChatInputProps {
 /**
  * The consultation input, permanently docked at the foot of the chat panel.
  *
- * A textarea rather than a single-line input: questions about a painting run
- * long, and the visitor should be able to see what they wrote. Enter sends,
- * Shift+Enter breaks the line — the convention for this control.
  */
 export function ChatInput({
   value,

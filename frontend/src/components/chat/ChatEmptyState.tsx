@@ -7,9 +7,6 @@ interface ChatEmptyStateProps {
 /**
  * What the chat shows before a word has been exchanged.
  *
- * This replaces the three hardcoded demonstration bubbles the panel used to
- * open with (FRONTEND_SPEC §13): an introduction the visitor can see is an
- * introduction, rather than a scripted conversation posing as a real one.
  */
 export function ChatEmptyState({ hasArtwork }: ChatEmptyStateProps) {
   return (
