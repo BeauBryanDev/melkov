@@ -9,13 +9,16 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.tools import tool
 
-from app.agent.prompts import MELKOV_SYSTEM_PROMPT, attachment_prompt, format_style_ranking
+from app.agent.prompts import ( MELKOV_SYSTEM_PROMPT, 
+                               attachment_prompt, 
+                               format_style_ranking )
 from app.agent.readings import Reading
 from app.config import (
     ANTHROPIC_API_KEY,
     ANTHROPIC_MODEL,
     LLM_EFFORT,
     LLM_MAX_TOKENS,
+    LLM_PROMPT_CACHE,
     LLM_TEMPERATURE,
     LLM_THINKING_ENABLED,
 )
@@ -50,7 +53,7 @@ def build_melkov_agent(reading: Reading | None = None) -> tuple[Any, Artifacts]:
     Build a Melkov agent bound to the artwork in this session's frame.
 
     A fresh agent is built per turn because the image is captured by closure.
-    The construction itself is cheap — the expensive resources (embedding
+    The construction itself is cheap -> the expensive resources (embedding
     model, Chroma collection, Gradio client) are process-wide singletons
     inside the tool modules, not rebuilt here.
 
@@ -59,14 +62,6 @@ def build_melkov_agent(reading: Reading | None = None) -> tuple[Any, Artifacts]:
     it is inlined into the system prompt, so a follow-up question costs no
     tool call; the two image tools fall back to the same cache when the model
     calls them anyway, and write into it when they do real work.
-
-    Args:
-        reading: The artwork in the frame, or ``None`` when the session has
-            never uploaded one.
-
-    Returns:
-        A ``(agent, artifacts)`` pair. Invoke the agent with
-        ``{"messages": [...]}``; read ``artifacts`` afterwards.
     """
     artifacts: Artifacts = {
         "generated_image_b64": None,
@@ -120,9 +115,6 @@ def build_melkov_agent(reading: Reading | None = None) -> tuple[Any, Artifacts]:
         subject, composition, medium, palette, lighting, style. The image is
         returned to the user automatically as an attachment, so describe your
         intent in the reply rather than pretending to show it.
-
-        Keep the prompt under 700 characters: the generator hard-rejects
-        anything longer, and over-length prompts are trimmed before sending.
 
         Args:
             prompt: A detailed visual description, under 700 characters.
@@ -341,7 +333,7 @@ def build_melkov_agent(reading: Reading | None = None) -> tuple[Any, Artifacts]:
         get_art_advice_tool,
     ]
 
-    # temperature only when configured (Sonnet 5 rejects it with a 400).
+    # Temperature only when configured - Sonnet 5 rejects it with a 400.
     # Thinking off unless asked: Sonnet 5 thinks by default and bills it as output.
     model_kwargs: dict[str, Any] = {
         
@@ -355,8 +347,16 @@ def build_melkov_agent(reading: Reading | None = None) -> tuple[Any, Artifacts]:
         model_kwargs["reasoning_effort"] = LLM_EFFORT
         
     if LLM_TEMPERATURE is not None:
-        
+
         model_kwargs["temperature"] = LLM_TEMPERATURE
+
+    # Prompt caching.`model_kwargs` are spread into the request payload, so
+    # this is the API's top-level `cache_control`: a breakpoint on the last
+    # cacheable block of each call, i.e. the whole prefix. Nothing about the
+    # messages or tools changes; a prefix under the model's minimum cacheable
+    # size is simply not cached, with no error.
+    if LLM_PROMPT_CACHE:
+        model_kwargs["model_kwargs"] = {"cache_control": {"type": "ephemeral"}}
         
     model = ChatAnthropic(**model_kwargs)
 

@@ -12,7 +12,7 @@ load_dotenv()
 ##  LLM Providers from Anthropic
 ANTHROPIC_API_KEY: Final[str] = os.getenv("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL: Final[str] = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5")
-# Melkov Main LLM as Clade-Sonnet-5
+# Melkov Main Brain as Clade-Sonnet-5
 _temperature_raw: Final[str] = os.getenv("LLM_TEMPERATURE", "").strip()
 # LLM Settings: temperature, effort, max tokens, and thinking mode.
 LLM_TEMPERATURE: Final[float | None] = (
@@ -24,6 +24,13 @@ LLM_THINKING_ENABLED: Final[bool] = (
     os.getenv("LLM_THINKING_ENABLED", "false").strip().lower() == "true"
 )
 LLM_MAX_TOKENS: Final[int] = int(os.getenv("LLM_MAX_TOKENS", "1500"))
+# Prompt caching: a top-level cache_control marks the last block of every
+# request, so the tool schemas + system prompt + history read from cache on
+# the next call (the second call of a tool turn, and every later turn). Set
+# LLM_PROMPT_CACHE=false to switch it off without touching code.
+LLM_PROMPT_CACHE: Final[bool] = (
+    os.getenv("LLM_PROMPT_CACHE", "true").strip().lower() == "true"
+)
 
 # Melkov VLM fine-tuned Qwen2.5-VL-7B on a HF Space ZeroGPU
 HF_TOKEN: Final[str] = os.getenv("HF_TOKEN", "")  # this is my VLM QloRA in HF Spaces
@@ -31,7 +38,7 @@ MELKOV_VLM_SPACE: Final[str] = os.getenv("MELKOV_VLM_SPACE", "beaunix/melkov")
 # The Space's only named endpoint. It takes a MultimodalTextbox payload  
 # {"text": ..., "files": [...]} — not a bare file. Verified with view_api().
 MELKOV_VLM_API_NAME: Final[str] = os.getenv("MELKOV_VLM_API_NAME", "/respond")
-# TODO: I MUST EDIT THE GRADIO SPACE CODE IN app.py TO DECREASE THE TOKEN LIMIT
+# TODO: I MUST EDIT THE GRADIO SPACE CODE IN app.py TO DECREASE THE TOKEN LIMIT //DONE!
 # MY VLM IS GIVING LONG RESPONSES, SO I NEED TO SET A LOWER TOKEN LIMIT
 VLM_TIMEOUT: Final[float] = float(os.getenv("VLM_TIMEOUT", "180"))
 
@@ -117,7 +124,7 @@ def verify_config() -> list[str]:
         warnings.append("YOUTUBE_DATA_API_KEY missing — painting-advice videos are disabled.")
         
     if not ART_STYLE_MODEL_PATH.is_file() or not ART_STYLE_CLASSES_PATH.is_file():
-        warnings.append(
+        warnings.append( # the CNN  must be at the root of the models folder
             f"Style classifier artifacts missing from {ART_STYLE_MODEL_DIR} — "
             "style classification is disabled."
         )

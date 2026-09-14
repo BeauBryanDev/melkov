@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import hashlib
+import threading
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Final
 
 from app.config import MAX_READINGS
@@ -12,11 +13,11 @@ from app.tools.art_style_identifier import StyleIdentification
 _DATA_URL_SEPARATOR: Final[str] = ","
 
 # Per-image cache of what Melkov's tools have already said about an artwork.
-
-# This module decides one thing: whether a turn that arrives *without* image
-# bytes still has an artwork in front of it, and what is already known about
-# that artwork.
-
+# Saving inference time, tokens, saves memory, saves the VLM Space. The cache is
+# shared between sessions, so the frontend can't forget a conversation's
+# artwork until the user has uploaded a new one. The backend can't forget a
+# tool call on a turn that arrived without bytes, because the tool is still
+# waiting for the image to arrive.
 @dataclass(slots=True)
 class Reading:
     """
@@ -28,11 +29,17 @@ class Reading:
             can still run on a turn that carried no bytes.
         description: The VLM's reading, once ``describe_artwork`` has run.
         style: The classifier's scores, once anything has classified it.
+        lock: Serialises the expensive fills. The upload-time read and a
+            chat turn can race on the same image; whoever loses the race
+            waits and then finds the description already there, so the VLM
+            Space is woken once per image, never twice.
     """
     image_hash: str
     image_b64: str
     description: str | None = None
     style: StyleIdentification | None = None
+    lock: threading.Lock = field(default_factory=threading.Lock, 
+                                 repr=False, compare=False)
 
 
 _READINGS: OrderedDict[str, Reading] = OrderedDict()
