@@ -39,7 +39,8 @@ class Reading:
     description: str | None = None
     style: StyleIdentification | None = None
     lock: threading.Lock = field(default_factory=threading.Lock, 
-                                 repr=False, compare=False)
+                                 repr=False, 
+                                 compare=False)
 
 
 _READINGS: OrderedDict[str, Reading] = OrderedDict()

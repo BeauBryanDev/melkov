@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, TypedDict
 
 from langchain.agents import create_agent
@@ -30,7 +31,9 @@ from app.tools.rag_retriever import query_art_history
 from app.tools.vlm_describe import describe_artwork
 from app.tools.louvre_search import louvre_search
 from app.tools.british_museum_search import british_museum_search
+from app.tools.cleveland_museum_search import cleveland_search
 from app.tools.artist_advisor import get_art_advice
+from app.tools.local_gallery_search import search_by_artist, search_by_style
 from app.utils.image_utils import base64_to_pil, pil_to_base64
 
 logger = logging.getLogger(__name__)
@@ -43,7 +46,9 @@ class Artifacts(TypedDict):
     met_results: list[dict[str, Any]] | None
     louvre_results: list[dict[str, Any]] | None
     british_museum_results: list[dict[str, Any]] | None
+    cleveland_results: list[dict[str, Any]] | None
     art_advice: list[dict[str, Any]] | None
+    gallery_results: list[dict[str, Any]] | None
     style_analysis: StyleIdentification | None
     vlm_description: str | None
 
@@ -68,7 +73,9 @@ def build_melkov_agent(reading: Reading | None = None) -> tuple[Any, Artifacts]:
         "met_results": None,
         "louvre_results": None,
         "british_museum_results": None,
+        "cleveland_results": None,
         "art_advice": None,
+        "gallery_results": None,
         "style_analysis": None,
         "vlm_description": None,
     }
@@ -209,6 +216,23 @@ def build_melkov_agent(reading: Reading | None = None) -> tuple[Any, Artifacts]:
             query,
         )
 
+    @tool
+    def search_cleveland_artworks_tool(query: str) -> str:
+        """
+        Search the Cleveland Museum of Art's collection (its own Open Access
+        API - as reliable as the MET). Matches title, artist and the curatorial
+        description, so a movement or subject ("Impressionism", "still life")
+        often works too, though there is no strict style filter. Use when the
+        person asks for Cleveland, or when the MET search came back empty.
+
+        Args:
+            query: A title, artist, movement or subject, e.g. "Monet".
+        """
+        return _run_museum_search(
+            "cleveland_results", "the Cleveland Museum of Art collection",
+            cleveland_search, query,
+        )
+
     def _run_museum_search(
         artifact_key: str, 
         subject: str, 
@@ -241,6 +265,54 @@ def build_melkov_agent(reading: Reading | None = None) -> tuple[Any, Artifacts]:
         return f"Found {len(results)} works: {summary}"
 
     @tool
+    def search_local_gallery_tool(query: str, by: str = "style") -> str:
+        """
+        Search Melkov's own gallery: the 22,258 artworks your eye was trained on.
+
+        A FALLBACK, not a first choice. Use it only after two museum searches
+        (MET, Louvre, British Museum or Cleveland) have failed or come back empty for
+        the same request. Most works are catalogued as "Unknown Artist", so
+        searching by style is far more fruitful than by artist.
+
+        Args:
+            query: A full style name - Abstract, Action Painting, Art Nouveau,
+                Baroque, Color Field Painting, Contemporary, Cubism,
+                Early Renaissance, Expressionism, Fauvism, High Renaissance,
+                Impressionism, Mannerism, Minimalism, Naive Art,
+                New Objectivity, Northern Renaissance, Pointillism, Pop Art,
+                Post-Impressionism, Realism, Rococo, Romanticism, Symbolism,
+                Ukiyo-e. A broader movement also works ("Renaissance" covers
+                all three). Or an artist name.
+            by: "style" (default) or "artist".
+        """
+        try:
+            if by == "artist":
+                envelope = search_by_artist(query)
+                
+            else:
+                envelope = search_by_style(query)
+
+        except Exception as error:  # noqa: BLE001
+            logger.exception("local_gallery_search failed")
+            return _tool_error("Melkov's own gallery", error)
+
+        results = envelope.get("results") or []
+        artifacts["gallery_results"] = results
+
+        if envelope.get("error"):
+            return f"TOOL FAILURE: {envelope['error']} Tell the user and carry on."
+
+        if not results:
+            return f"No works found in Melkov's gallery for {query!r} (by {by})."
+
+        summary = "; ".join(
+            f"{item.get('artist') or 'Unknown Artist'}, {item.get('style')}: "
+            f"{(item.get('caption') or '')[:160]}"
+            for item in results
+        )
+        return f"Found {len(results)} works in your own gallery: {summary}"
+
+    @tool
     def query_art_history_tool(question: str) -> str:
         """
         Search the art-history library for grounded, citable passages.
@@ -260,6 +332,7 @@ def build_melkov_agent(reading: Reading | None = None) -> tuple[Any, Artifacts]:
         except Exception as error:  # noqa: BLE001
             logger.exception("rag_retriever failed")
             return _tool_error("the art-history library", error)
+        
 
     @tool
     def identify_art_style_tool() -> str:
@@ -329,6 +402,8 @@ def build_melkov_agent(reading: Reading | None = None) -> tuple[Any, Artifacts]:
         search_met_artworks_tool,
         search_louvre_artworks_tool,
         search_british_museum_artworks_tool,
+        search_cleveland_artworks_tool,
+        search_local_gallery_tool,
         query_art_history_tool,
         get_art_advice_tool,
     ]
@@ -349,10 +424,9 @@ def build_melkov_agent(reading: Reading | None = None) -> tuple[Any, Artifacts]:
     if LLM_TEMPERATURE is not None:
 
         model_kwargs["temperature"] = LLM_TEMPERATURE
-
-    # Prompt caching.`model_kwargs` are spread into the request payload, so
+    # Prompt caching.model_kwargs are spread into the request payload, so
     # this is the API's top-level `cache_control`: a breakpoint on the last
-    # cacheable block of each call, i.e. the whole prefix. Nothing about the
+    # cacheable block of each call,  the whole prefix. Nothing about the
     # messages or tools changes; a prefix under the model's minimum cacheable
     # size is simply not cached, with no error.
     if LLM_PROMPT_CACHE:
@@ -368,10 +442,15 @@ def build_melkov_agent(reading: Reading | None = None) -> tuple[Any, Artifacts]:
     return agent, artifacts
 
 def _year_of(date: str | None) -> str:
-    """Year of a Wikidata timestamp like 1503-01-01T00:00:00Z."""
+    """Year of a Wikidata timestamp like 1503-01-01T00:00:00Z.
+
+    Free-text dates (Cleveland's "c. 1868-73") are returned unchanged.
+    """
     if not date:
         return "date unknown"
-    
+    if not re.match(r"-?\d{4}-\d{2}-\d{2}T", date):
+        return date
+
     return date.lstrip("-")[:4] if date[0] != "-" else f"{date[1:5]} BC"
 
 
