@@ -1,6 +1,5 @@
 /**
  * Wire types for the Melkov backend app/schemas/chat.py.
- *
  */
 
 /** A single tool invocation, as reported by `ChatResponse.tools_used`. */
@@ -17,6 +16,18 @@ export interface ChatRequestBody {
   image_base64?: string | null;
 }
 
+/** One row of `local_gallery_search` — the images Melkov was trained on, stored in S3. */
+export interface GalleryWork {
+  id: string;
+  artist: string | null;
+  style: string | null;
+  caption: string | null;
+  width: number | null;
+  height: number | null;
+  /** Object key inside the gallery bucket, e.g. "images/Baroque/Baroque_00631.jpg". */
+  s3_key: string;
+}
+
 /** POST /chat response body. */
 export interface ChatResponseBody {
   reply: string;
@@ -28,6 +39,10 @@ export interface ChatResponseBody {
   louvre_results: MuseumWork[] | null;
   /** British Museum works via Wikidata; non-null only when that tool ran. */
   british_museum_results: MuseumWork[] | null;
+  /** Cleveland Museum of Art works via its Open Access API; non-null only when that tool ran. */
+  cleveland_results: MuseumWork[] | null;
+  /** Works from Melkov's own S3-hosted training gallery; non-null only when that tool ran. */
+  gallery_results: GalleryWork[] | null;
   /** Technique videos from trusted channels; non-null only when that tool ran. */
   art_advice: ArtAdviceVideo[] | null;
   /**
@@ -145,7 +160,9 @@ export const TOOL_NAMES = {
   met: "search_met_artworks_tool",
   louvre: "search_louvre_artworks_tool",
   britishMuseum: "search_british_museum_artworks_tool",
+  cleveland: "search_cleveland_artworks_tool",
   advice: "get_art_advice_tool",
+  gallery: "search_local_gallery_tool",
   history: "query_art_history_tool",
   style: "identify_art_style_tool",
 } as const;

@@ -81,6 +81,10 @@ function toChatError(error: unknown): ChatError {
         "That canvas is too large for the frame. Please offer a smaller image.",
         detail,
       );
+    case 429:
+      // The backend's detail is already written for the visitor: a short
+      // wait, or the atelier's daily limit.
+      return new ChatError(detail, detail);
     case 422:
       return new ChatError(
         "Melkov could not read that request. Please rephrase and try again.",

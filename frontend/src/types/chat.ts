@@ -1,4 +1,4 @@
-import type { ArtAdviceVideo, MetRecord, MuseumWork, ToolCallLog } from "./api";
+import type { ArtAdviceVideo, GalleryWork, MetRecord, MuseumWork, ToolCallLog } from "./api";
 
 export type ChatRole = "user" | "assistant";
 
@@ -26,7 +26,9 @@ export interface ChatMessage {
   metResults?: MetRecord[] | null;
   louvreResults?: MuseumWork[] | null;
   britishMuseumResults?: MuseumWork[] | null;
+  clevelandResults?: MuseumWork[] | null;
   artAdvice?: ArtAdviceVideo[] | null;
+  galleryResults?: GalleryWork[] | null;
   /** Set when the turn failed; rendered in the restrained error style. */
   failed?: boolean;
 }
