@@ -13,10 +13,6 @@ import { useAnalysisStore } from "./stores/analysis.store";
 /**
  * The atelier.
  *
- * Every value below comes from a store fed by the backend. Nothing on this
- * page is hardcoded sample content — the demonstration conversation, the
- * Impressionism paragraph and the 82% confidence figures that used to live
- * here were fixtures, and FRONTEND_SPEC §37 rules them out of production.
  */
 function App() {
   const artwork = useArtwork();
@@ -43,7 +39,6 @@ function App() {
           hasArtwork={Boolean(artwork.previewUrl)}
           messages={chat.messages}
           onFile={artwork.acceptFile}
-          onComposing={chat.primeArtwork}
           onNewConsultation={chat.startNewConsultation}
           onSend={chat.sendMessage}
           status={chat.status}

@@ -1244,70 +1244,71 @@ img {
   flex-wrap: wrap;
 }
 
-/* Golden spinner — shown while Melkov is thinking or answering. */
+/* Quill writing a line of ink while Melkov composes a text reply. The nib
+   is the image's bottom-left corner, so it rides the ink line's leading edge. */
 
-.golden-spinner {
+.feather-writing {
   position: relative;
-  display: inline-block;
   flex: none;
+  /* 58px of ink + the 26px quill parked at its end, so it never covers the phrase. */
+  width: 86px;
+  height: 34px;
 }
 
-.golden-spinner-ring {
+.feather-ink {
   position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  /* A conic sweep masked to a ring: gives the arc a gradient falloff that a
-     border-top spinner cannot, so the gold reads as reflected light. */
-  background: conic-gradient(
-    from 0deg,
-    rgba(201, 162, 39, 0) 0deg,
-    rgba(201, 162, 39, 0.15) 120deg,
-    var(--gold) 280deg,
-    var(--gold-high) 340deg,
-    rgba(232, 199, 90, 0) 360deg
-  );
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
-  animation: golden-spin 1.5s linear infinite;
+  left: 0;
+  bottom: 2px;
+  width: 58px;
+  height: 14px;
+  overflow: visible;
 }
 
-.golden-spinner-ring-inner {
-  inset: 5px;
-  opacity: 0.55;
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 1.5px), #000 calc(100% - 1.5px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 1.5px), #000 calc(100% - 1.5px));
-  animation: golden-spin-reverse 2.1s linear infinite;
+.feather-ink path {
+  fill: none;
+  stroke: var(--gold-high);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--gold-high) 55%, transparent));
+  animation: feather-ink-draw 2.6s ease-in-out infinite;
 }
 
-.golden-spinner-core {
+.feather-quill {
   position: absolute;
-  inset: 0;
-  margin: auto;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: var(--gold-high);
-  box-shadow: 0 0 6px rgba(232, 199, 90, 0.6);
-  animation: golden-core-breathe 1.9s ease-in-out infinite;
+  left: 0;
+  bottom: 4px;
+  width: 26px;
+  height: 26px;
+  transform-origin: 0% 100%;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35));
+  animation:
+    feather-glide 2.6s ease-in-out infinite,
+    feather-scribble 0.32s ease-in-out infinite alternate;
 }
 
-.typing-indicator {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
+@keyframes feather-ink-draw {
+  0% { stroke-dashoffset: 100; opacity: 1; }
+  75% { stroke-dashoffset: 0; opacity: 1; }
+  92%, 100% { stroke-dashoffset: 0; opacity: 0; }
 }
 
-.typing-indicator span {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--gold-high);
-  box-shadow: 0 0 6px color-mix(in srgb, var(--gold-high) 60%, transparent);
-  animation: typing-pulse 1.2s infinite ease-in-out;
+/* The glide moves the quill along with the ink via `left`; the scribble uses
+   the individual `rotate`/`translate` properties, so the two run together
+   without overwriting each other. */
+@keyframes feather-glide {
+  0% { left: 0; opacity: 1; }
+  75% { left: 56px; opacity: 1; }
+  88% { left: 56px; opacity: 0; }
+  89% { left: 0; opacity: 0; }
+  100% { left: 0; opacity: 1; }
 }
 
-.typing-indicator span:nth-child(2) { animation-delay: 0.15s; }
-.typing-indicator span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes feather-scribble {
+  from { rotate: -4deg; translate: 0 1px; }
+  to { rotate: 5deg; translate: 0 -4px; }
+}
 
 /* Input (§17) */
 
@@ -1782,11 +1783,6 @@ img {
   to { opacity: 0; }
 }
 
-@keyframes typing-pulse {
-  0%, 80%, 100% { transform: translateY(0) scale(1); opacity: 0.35; }
-  40% { transform: translateY(-4px) scale(1.25); opacity: 1; }
-}
-
 @keyframes pending-sweep {
   from { background-position: 140% 0; }
   to { background-position: -60% 0; }
@@ -1799,19 +1795,6 @@ img {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
-}
-
-@keyframes golden-spin {
-  to { transform: rotate(360deg); }
-}
-
-@keyframes golden-spin-reverse {
-  to { transform: rotate(-360deg); }
-}
-
-@keyframes golden-core-breathe {
-  0%, 100% { opacity: 0.35; }
-  50% { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
