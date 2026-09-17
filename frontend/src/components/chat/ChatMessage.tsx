@@ -6,6 +6,7 @@ import { formatTime } from "../../utils/format";
 import { toDataUrl } from "../../utils/image";
 import { MetResults } from "./MetResults";
 import { VideoResults } from "./VideoResults";
+import { GalleryResults } from "./GalleryResults";
 import { MuseumResults } from "../common/MuseumResults";
 import { ToolTrace } from "./ToolTrace";
 import { useRevealedText } from "./useRevealedText";
@@ -90,6 +91,10 @@ export function ChatMessage({ message }: ChatMessageProps) {
       {message.britishMuseumResults?.length ? (
         <MuseumResults title="From the British Museum" works={message.britishMuseumResults} />
       ) : null}
+      {message.clevelandResults?.length ? (
+        <MuseumResults title="From the Cleveland Museum of Art" works={message.clevelandResults} />
+      ) : null}
+      {message.galleryResults?.length ? <GalleryResults works={message.galleryResults} /> : null}
       {message.artAdvice?.length ? <VideoResults videos={message.artAdvice} /> : null}
 
       {message.tools?.length ? <ToolTrace tools={message.tools} /> : null}

@@ -3,7 +3,7 @@ import type { ArtAdviceVideo } from "../../types/api";
 interface VideoResultsProps {
   videos: ArtAdviceVideo[];
 }
-
+// came from youtube url
 const VIDEO_ID = /[?&]v=([\w-]+)/;
 
 function thumbnail(url: string): string | null {

@@ -1,7 +1,6 @@
 import type { ChatStatus } from "../../types/chat";
-import { TypingIndicator } from "./TypingIndicator";
+import { FeatherWriting } from "./FeatherWriting";
 import { ChatPrinceAvatar } from "./ChatPrinceAvatar";
-import { GoldenSpinner } from "../ui/GoldenSpinner";
 import { useThinkingCue } from "./useThinkingCue";
 
 interface AnalysisStatusProps {
@@ -30,11 +29,12 @@ export function AnalysisStatus({ status }: AnalysisStatusProps) {
         {seconds >= 3 ? <span className="chat-pending-clock">{seconds}s</span> : null}
       </div>
       <div className="chat-pending-line">
-        <GoldenSpinner />
+        {/* The quill on every turn: a turn that carries the image still ends
+            in Melkov writing, and the frame shows its own examining state. */}
+        <FeatherWriting />
         <p className="chat-pending-copy" key={phrase}>
           {phrase}
         </p>
-        <TypingIndicator />
       </div>
       {examining ? (
         <p className="chat-pending-note">

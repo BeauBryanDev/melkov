@@ -10,8 +10,9 @@ const EXAMINING = [
 
 const CONSIDERING = [
   "Considering your question…",
-  "Turning it over…",
-  "Consulting the library…",
+  "Dipping the quill…",
+  "Searching the collections…",
+  "Writing his reply…",
 ] as const;
 
 interface ThinkingCue {

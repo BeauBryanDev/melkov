@@ -11,6 +11,8 @@ const LABELS: Record<string, string> = {
   [TOOL_NAMES.met]: "Consulted the Met collection",
   [TOOL_NAMES.louvre]: "Consulted the Louvre",
   [TOOL_NAMES.britishMuseum]: "Consulted the British Museum",
+  [TOOL_NAMES.cleveland]: "Consulted the Cleveland Museum of Art",
+  [TOOL_NAMES.gallery]: "Searched his own gallery",
   [TOOL_NAMES.advice]: "Found studio lessons",
   [TOOL_NAMES.history]: "Consulted the art-history library",
 };

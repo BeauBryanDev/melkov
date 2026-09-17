@@ -17,8 +17,6 @@ interface ChatPanelProps {
   busy: boolean;
   hasArtwork: boolean;
   onSend: (message: string) => void;
-  /** The visitor has started writing: a chance to read the artwork ahead of the question. */
-  onComposing?: () => void;
   onNewConsultation: () => void;
   /** Hangs a file dropped onto the chat in the frame, via the same path the frame uses. */
   onFile: (file: File) => void;
@@ -38,7 +36,6 @@ export function ChatPanel({
   busy,
   hasArtwork,
   onSend,
-  onComposing,
   onNewConsultation,
   onFile,
 }: ChatPanelProps) {
@@ -46,9 +43,6 @@ export function ChatPanel({
 
   const handleDraft = (value: string) => {
     setDraft(value);
-    if (value.trim()) {
-      onComposing?.();
-    }
   };
   const railRef = useAutoScroll(`${messages.length}:${status}`);
   const { isDragging, dragHandlers } = useDragDrop({ onFile, disabled: busy });

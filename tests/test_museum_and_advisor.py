@@ -7,11 +7,13 @@ import requests
 import responses
 
 from app.tools import artist_advisor, wikidata_museum
-from app.tools.british_museum_search import british_museum_search
+from app.tools.british_museum_search import british_museum_searc
 from app.tools.louvre_search import LOUVRE, louvre_search
 
 
-def _binding(title: str, artist: str | None = None, image: str | None = None) -> dict[str, Any]:
+def _binding(title: str, 
+             artist: str | None = None, image: str | None = None
+             ) -> dict[str, Any]:
     row: dict[str, Any] = {
         "item": {"value": "http://www.wikidata.org/entity/Q1"},
         "itemLabel": {"value": title},
