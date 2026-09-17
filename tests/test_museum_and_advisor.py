@@ -7,7 +7,7 @@ import requests
 import responses
 
 from app.tools import artist_advisor, wikidata_museum
-from app.tools.british_museum_search import british_museum_searc
+from app.tools.british_museum_search import british_museum_search
 from app.tools.louvre_search import LOUVRE, louvre_search
 
 

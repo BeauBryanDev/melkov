@@ -4,15 +4,19 @@
 
 Designed as a full-stack AI application, Melkov can analyze artworks, discuss art history and artistic movements, generate original art, search museum collections, and classify artistic styles through a dedicated computer-vision model.
 
-Part of the **Aegis portfolio**, Melkov takes a different direction from the portfolio's detection and classification systems such as Sentinel-Net, Traffic-Sentinel, and DentaVision. It is the portfolio's first **generative, multimodal AI agent focused exclusively on the domain of art**.
 
-Rather than relying on a single model for every task, Melkov uses an orchestrator architecture with **five specialized tools**, each responsible for a specific capability:
+Rather than relying on a single model for every task, Melkov uses an orchestrator architecture with **ten specialized tools**, each responsible for a specific capability:
 
-1. **Art History RAG** — retrieves relevant knowledge from a curated art-history corpus using ChromaDB and semantic embeddings.
-2. **MET Museum Search** — searches the Metropolitan Museum of Art's public collection API and retrieves artwork metadata and museum images.
-3. **Artwork Vision & Description** — uses the fine-tuned Melkov VLM to analyze submitted artworks and produce detailed artistic descriptions.
-4. **Art Image Generation** — generates original artwork through the FLUX image-generation model served through NVIDIA's API.
-5. **Art Style Classification** — uses a custom-trained CNN to classify artworks across 15 artistic styles.
+1. **Artwork Vision & Description** — uses the fine-tuned Melkov VLM (Qwen2.5-VL-7B, served from a Hugging Face Space) to analyze submitted artworks and produce detailed artistic descriptions.
+2. **Art Style Classification** — uses a custom-trained CNN (EfficientNetV2-S, exported to ONNX, CPU inference) to classify artworks across 15 artistic styles.
+3. **Art Image Generation** — generates original artwork through the FLUX image-generation model served through NVIDIA's API.
+4. **Art History RAG** — retrieves relevant knowledge from a curated art-history corpus using ChromaDB and semantic embeddings.
+5. **MET Museum Search** — searches the Metropolitan Museum of Art's Open Access API and retrieves artwork metadata and museum images.
+6. **Cleveland Museum of Art Search** — searches the Cleveland Museum of Art's own Open Access API (CC0, 64,000+ records), matching titles, artists and curatorial descriptions.
+7. **Louvre Search** — finds Louvre works through Wikidata's SPARQL endpoint, since the museum has no public search API.
+8. **British Museum Search** — the same Wikidata approach for the British Museum's collection.
+9. **Artist Advisor** — finds painting-technique lessons from a curated set of trusted YouTube art channels.
+10. **Melkov's Own Gallery** — searches the 22,258 artworks Melkov was fine-tuned on (SQLite catalogue, images in S3), a fallback when museum searches come back empty, this tool is still in development.
 
 The result is an AI agent that combines **vision, language, retrieval, generation, and computer vision** into a single art-focused system.
 
@@ -39,11 +43,13 @@ prompting.
 
 | Role | Model | Where it lives |
 |---|---|---|
-| Vision-language orchestrator ("Melkov") | Qwen2-VL-7B-Instruct, QLoRA 4-bit fine-tune | Hugging Face (Inference Endpoint) |
-| Image generation | FLUX (open-source) | Hugging Face (Inference Endpoint / Space) |
+| Orchestrator agent ("Melkov") | Claude Sonnet 5 (Anthropic API) via LangChain `create_agent` | Anthropic API |
+| Vision-language model (artwork description tool) | Qwen2.5-VL-7B-Instruct, QLoRA 4-bit fine-tune | Hugging Face Space (ZeroGPU) |
+| Art-style classifier | EfficientNetV2-S, 15 classes, ONNX | CPU, alongside the backend |
+| Image generation | FLUX | NVIDIA API |
 | Art-history retrieval | ChromaDB vector store over curated art-history documents | Self-hosted alongside the backend (no GPU required) |
 
-Qwen2-VL-7B-Instruct was chosen for consistency with the rest of the Aegis
+Qwen2.5-VL-7B-Instruct was chosen for consistency with the rest of the Aegis
 portfolio (Aegis-CyberSec-Guard fine-tunes the Qwen2.5 family), and because its
 instruct-tuned base is well suited to conversational image description.
 
@@ -138,20 +144,22 @@ end-to-end responder — the same pattern used in Aegis-CyberSec-Guard
 User input (image | question | generation request)
                 |
                 v
-   Melkov (fine-tuned Qwen2-VL-7B + persona system prompt)
+   Melkov (Claude Sonnet 5 orchestrator + persona system prompt)
                 |
-        routes to one or more tools
+        routes to one or more of ten tools
                 |
-   +------------+-------------+------------------------+
-   |                          |                         |
-Direct description      Art-history RAG          Image generation
-(the fine-tuned VLM      (ChromaDB retrieval       (prompt refined by
- itself, no tool call     over curated art-         Melkov, then sent
- needed)                  history documents)        to FLUX)
+   +-----------------+------------------+---------------------+
+   |                 |                  |                     |
+ See the artwork   Know art history   Create               Find real works
+ - fine-tuned VLM  - ChromaDB RAG     - FLUX generation    - MET, Cleveland
+ - style CNN       - artist advisor                          Louvre, British
+                     (YouTube)                               Museum, own gallery
 ```
 
-- **Image uploaded, no specific question** -> Melkov describes it directly
-  using its fine-tuned knowledge.
+- **Image uploaded with a question about it** -> Melkov calls the fine-tuned
+  VLM for a description and the CNN for style scores. Both readings are
+  cached per image, so follow-up questions about the same artwork need no
+  new tool calls.
 - **Art-history or biographical question** (e.g. "Tell me about Van Gogh's
   turbulent life and how it shaped his masterpieces") -> Melkov calls the
   RAG tool against the ChromaDB art-history store and answers with
@@ -161,6 +169,10 @@ Direct description      Art-history RAG          Image generation
   style") -> Melkov rewrites and constrains the user's prompt to fit FLUX's
   input limits, enriching it with the technical/stylistic vocabulary learned
   during fine-tuning, then calls the FLUX endpoint.
+- **"Show me" requests** (e.g. "show me Impressionist landscapes") -> Melkov
+  searches the MET first, offers Cleveland, the Louvre or the British Museum
+  for more, and falls back to his own training gallery after two empty
+  museum searches.
 - **Combined requests** (e.g. an uploaded image plus "what inspired this
   style?") -> description and RAG tools can both fire within the same
   response.
@@ -180,8 +192,11 @@ Consistent with the rest of the Aegis portfolio:
 | Backend | Python, FastAPI |
 | Image preprocessing | OpenCV |
 | Database (RAG) | ChromaDB (self-hosted, no GPU) |
-| VLM inference | Qwen2-VL-7B-Instruct (fine-tuned), HF Inference Endpoint |
-| Image generation | FLUX, HF Inference Endpoint / Space |
+| Agent orchestration | LangChain / LangGraph, Claude Sonnet 5 |
+| VLM inference | Qwen2.5-VL-7B-Instruct (fine-tuned), HF Space (ZeroGPU) |
+| Style classification | EfficientNetV2-S, ONNX Runtime (CPU) |
+| Image generation | FLUX, NVIDIA API |
+| Museum data | MET and Cleveland Open Access APIs, Wikidata SPARQL, SQLite gallery + S3 |
 | Frontend | TypeScript, React, Tailwind, Vite |
 | Charts (if/when needed) | Recharts |
 | Deployment | AWS EC2 (backend + ChromaDB); HF for GPU inference |
@@ -225,3 +240,8 @@ used in the other Aegis frontends), and restrained ornamental detailing
 6. Integrate FLUX as the generation tool.
 7. Build the FastAPI orchestration layer (tool-calling, routing).
 8. Build the React/TS frontend (Baroque/Rococo visual identity).
+
+## 8. License
+
+MIT
+
