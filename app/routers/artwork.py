@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from app.agent import readings
 from app.agent.readings import Reading
 from app.config import MAX_IMAGE_B64_CHARS
+from app.rate_limit import PER_CLIENT_MESSAGE, artwork_read_rate_limit, limiter
 from app.schemas.artwork import ArtworkReadRequest, ArtworkReadResponse
 from app.tools.art_style_identifier import identify_art_style
 from app.tools.vlm_describe import describe_artwork
@@ -24,26 +25,30 @@ router = APIRouter(prefix="/artwork", tags=["artwork"])
 # costs about 10 s, so the VLM Space is warmed up in the background.
 
 @router.post("/read", response_model=ArtworkReadResponse)
-def read_artwork(request: ArtworkReadRequest) -> ArtworkReadResponse:
+@limiter.limit(artwork_read_rate_limit, error_message=PER_CLIENT_MESSAGE)
+def read_artwork(request: Request, 
+                 payload: ArtworkReadRequest
+                 ) -> ArtworkReadResponse:
     """
     Describe and classify an upload, and remember it as the session's artwork.
 
     Args:
-        request: The session and the image now in its frame.
+        request: The raw HTTP request; slowapi reads the client address from it.
+        payload: The session and the image now in its frame.
 
     Returns:
         The VLM's description and the classifier's scores, served from the
         cache when this image has been read before.
         
     """
-    if len(request.image_base64) > MAX_IMAGE_B64_CHARS:
+    if len(payload.image_base64) > MAX_IMAGE_B64_CHARS:
         raise HTTPException(
             status_code=413,
             detail="Attached image is too large; please send a smaller one.",
         )
 
-    reading = readings.remember(request.session_id,
-                                request.image_base64)
+    reading = readings.remember(payload.session_id,
+                                payload.image_base64)
 
     # Every other caller (a chat turn on the same image) blocks here and then
     # finds the work done — one VLM call per image, whoever gets there first.
@@ -54,7 +59,7 @@ def read_artwork(request: ArtworkReadRequest) -> ArtworkReadResponse:
             _fill(reading)
 
     return ArtworkReadResponse(
-        session_id=request.session_id,
+        session_id=payload.session_id,
         vlm_description=reading.description or "",
         style_analysis=reading.style,
         cached=cached,

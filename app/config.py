@@ -62,6 +62,11 @@ WIKIDATA_USER_AGENT: Final[str] = os.getenv(
 WIKIDATA_TIMEOUT: Final[float] = float(os.getenv("WIKIDATA_TIMEOUT", "20"))
 MUSEUM_SEARCH_LIMIT: Final[int] = int(os.getenv("MUSEUM_SEARCH_LIMIT", "8"))
 
+# Cleveland Museum of Art Open Access API (no key; CC0).
+CLEVELAND_API_URL: Final[str] = "https://openaccess-api.clevelandart.org/api/artworks/"
+CLEVELAND_TIMEOUT: Final[float] = float(os.getenv("CLEVELAND_TIMEOUT", "8"))
+MUSEUM_USER_AGENT: Final[str] = os.getenv("MUSEUM_USER_AGENT", WIKIDATA_USER_AGENT)
+
 # Artist advisor (YouTube Data API v3). Optional.
 YOUTUBE_DATA_API_KEY: Final[str] = os.getenv("YOUTUBE_DATA_API_KEY", "")
 YOUTUBE_SEARCH_POOL: Final[int] = int(os.getenv("YOUTUBE_SEARCH_POOL", "10"))
@@ -91,6 +96,18 @@ MAX_READINGS: Final[int] = int(os.getenv("MAX_READINGS", "100"))
 # Uploaded images arrive as base64 in the JSON body; base64 inflates by ~4/3,
 # so this caps the decoded image at r~ 7.5 MB.
 MAX_IMAGE_B64_CHARS: Final[int] = int(os.getenv("MAX_IMAGE_B64_CHARS", str(10_000_000)))
+# Longest user message /chat accepts; every character is resent each turn.
+MAX_MESSAGE_CHARS: Final[int] = int(os.getenv("MAX_MESSAGE_CHARS", "4000"))
+
+#  Rate limits (app/rate_limit.py)
+# /chat spends Anthropic tokens, GPU quota and API credits on every turn.
+# CHAT_RATE_LIMIT uses slowapi/limits syntax; ";" separates several windows.
+RATE_LIMIT_ENABLED: Final[bool] = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+CHAT_RATE_LIMIT: Final[str] = os.getenv("CHAT_RATE_LIMIT", "5/minute;50/day")
+CHAT_GLOBAL_DAILY_LIMIT: Final[int] = int(os.getenv("CHAT_GLOBAL_DAILY_LIMIT", "500"))
+# POST /artwork/read wakes the ZeroGPU Space (daily GPU quota) but spends no
+# Anthropic tokens, so it has its own per-IP limit and no global cap.
+ARTWORK_READ_RATE_LIMIT: Final[str] = os.getenv("ARTWORK_READ_RATE_LIMIT", "5/minute;30/day")
 
 #  CORS  
 # set CORS_ORIGINS to the real frontend origin before deploying.

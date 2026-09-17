@@ -4,6 +4,8 @@ from __future__ import annotations
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+from app.config import MAX_MESSAGE_CHARS
 """Request and response models for the chat endpoint."""
 
 class StylePrediction(BaseModel):
@@ -11,7 +13,7 @@ class StylePrediction(BaseModel):
 
     label: str = Field(description="A style name from the classifier's 15 classes.")
     probability: float = Field(ge=0.0, le=1.0, description="Softmax weight, 0 to 1.")
-    # it comes form y custom CNN Model EfficientNetV2-S x15 art style classifier
+    # it comes ffrom my custom CNN Model EfficientNetV2-S x15 art style classifier
 
 class StyleIdentification(BaseModel):
     """
@@ -33,8 +35,14 @@ class StyleIdentification(BaseModel):
 class ChatRequest(BaseModel):
     """One user turn."""
 
-    message: str = Field(min_length=1, description="The user's message.")
-    session_id: str = Field(min_length=1, description="Conversation identifier.")
+    message: str = Field(
+        min_length=1, 
+        max_length=MAX_MESSAGE_CHARS, 
+        description="The user's message."
+    )
+    session_id: str = Field(min_length=1, 
+                            description="Conversation identifier."
+                            )
     image_base64: str | None = Field(
         default=None,
         description="Image uploaded with this turn, base64, optional data: prefix.",
@@ -64,9 +72,17 @@ class ChatResponse(BaseModel):
         default=None,
         description="British Museum works found via Wikidata; present only when that tool ran.",
     )
+    cleveland_results: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="Cleveland Museum of Art works from its Open Access API; present only when that tool ran.",
+    )
     art_advice: list[dict[str, Any]] | None = Field(
         default=None,
         description="Painting-technique videos from trusted channels; present only when that tool ran.",
+    )
+    gallery_results: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="Works from Melkov's own S3-hosted training gallery; present only when that tool ran.",
     )
     vlm_description: str | None = Field(
         default=None,

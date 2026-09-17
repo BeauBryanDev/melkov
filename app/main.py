@@ -6,7 +6,7 @@ from collections import OrderedDict
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
@@ -22,12 +22,22 @@ from app.config import (
     MAX_SESSIONS,
     verify_config,
 )
+from app.rate_limit import (
+    chat_global_limit,
+    chat_rate_limit,
+    global_key,
+    GLOBAL_MESSAGE,
+    limiter,
+    PER_CLIENT_MESSAGE,
+    rate_limit_exceeded_handler,
+)
 from app.routers.artwork import router as artwork_router
 from app.routers.health import router as health_router
 from app.routers.style import router as style_router
 from app.tools.art_style_identifier import StyleIdentification, identify_art_style
 from app.utils.image_utils import base64_to_pil
 from app.schemas.chat import ChatRequest, ChatResponse, ToolCallLog
+from slowapi.errors import RateLimitExceeded
  
 logging.basicConfig(level=logging.INFO, 
                     format="%(levelname)s %(name)s: %(message)s"
@@ -47,6 +57,11 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Melkov — Art Agent API", lifespan=_lifespan)
+
+# /chat is rate limited per client IP and globally per day: every turn spends
+# Anthropic tokens and GPU/API quota. See app/rate_limit.py.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -95,27 +110,33 @@ def _get_history(session_id: str) -> list[BaseMessage]:
 
 
 @app.post("/chat", response_model=ChatResponse)
-def chat(request: ChatRequest) -> ChatResponse:
+@limiter.limit(chat_global_limit, 
+               key_func=global_key, 
+               error_message=GLOBAL_MESSAGE)
+@limiter.limit(chat_rate_limit, 
+               error_message=PER_CLIENT_MESSAGE)
+def chat(request: Request, payload: ChatRequest) -> ChatResponse:
     """Run one conversational turn.
 
     Args:
-        request: The user's message, session id, and optional image.
+        request: The raw HTTP request; slowapi reads the client address from it.
+        payload: The user's message, session id, and optional image.
 
     Returns:
         Melkov's reply plus any artifacts the tools produced.
 
     Raises:
         HTTPException: 413 if the attached image is too large, 502 if the
-            turn fails outright.
+            turn fails outright. A rate limit answers 429 before the body runs.
     """
-    if request.image_base64 and len(request.image_base64) > MAX_IMAGE_B64_CHARS:
+    if payload.image_base64 and len(payload.image_base64) > MAX_IMAGE_B64_CHARS:
         
         raise HTTPException(
             status_code=413,
             detail="Attached image is too large; please send a smaller one.",
         )
 
-    history = _get_history(request.session_id)
+    history = _get_history(payload.session_id)
 
     # An upload replaces the artwork in the frame; silence keeps it. The
     # frontend sends the image once, so a turn with no bytes still has the
@@ -123,25 +144,26 @@ def chat(request: ChatRequest) -> ChatResponse:
     # it through the cached reading.
     reading: Reading | None
     
-    if request.image_base64:
-        reading = readings.remember(request.session_id, request.image_base64)
+    if payload.image_base64:
+        reading = readings.remember(payload.session_id, 
+                                    payload.image_base64)
         
     else:
-        reading = readings.current(request.session_id)
+        reading = readings.current(payload.session_id)
 
     agent, artifacts = build_melkov_agent(reading=reading)
 
     try:
         result = agent.invoke(
             {"messages": [*history, 
-                          HumanMessage(content=request.message)
+                          HumanMessage(content=payload.message)
                           ]}
         )
     except Exception as error:  # noqa: BLE001
         # The detail is logged, never returned: exception text from the model
         # provider can carry request URLs and key fragments.
         logger.exception("Turn failed for session %s", 
-                         request.session_id)
+                         payload.session_id)
         
         raise HTTPException(
             status_code=502,
@@ -150,18 +172,18 @@ def chat(request: ChatRequest) -> ChatResponse:
 
     messages: list[BaseMessage] = result["messages"]
     reply = extract_reply(messages)
-    _log_token_usage(request.session_id, messages)
+    _log_token_usage(payload.session_id, messages)
 
     # Only the user/assistant text is retained. Tool call and result messages
     # are dropped: they are large, and replaying them would invite the model
     # to treat stale tool output as current.
-    history.append(HumanMessage(content=request.message))
+    history.append(HumanMessage(content=payload.message))
     history.append(AIMessage(content=reply))
     del history[:-MAX_HISTORY_MESSAGES]
 
     return ChatResponse(
         reply=reply,
-        session_id=request.session_id,
+        session_id=payload.session_id,
         tools_used=[
             ToolCallLog(tool=name, 
                         input_summary=summary
@@ -172,7 +194,9 @@ def chat(request: ChatRequest) -> ChatResponse:
         met_results=artifacts["met_results"],
         louvre_results=artifacts["louvre_results"],
         british_museum_results=artifacts["british_museum_results"],
+        cleveland_results=artifacts["cleveland_results"],
         art_advice=artifacts["art_advice"],
+        gallery_results=artifacts["gallery_results"],
         style_analysis=artifacts["style_analysis"] or _classify_or_none(reading),
         vlm_description=artifacts["vlm_description"],
     )
@@ -217,6 +241,7 @@ def _log_token_usage(session_id: str,
             usage["cache_creation"],
             usage["output"],
         )
+        
     except Exception:  # noqa: BLE001 - a log line must never fail a turn
         logger.debug("Token usage unavailable for session %s", session_id)
 
@@ -233,10 +258,10 @@ def _classify_or_none(reading: Reading | None) -> StyleIdentification | None:
     good turn into a 502.
 
     Args:
-        reading: The artwork in the frame, or ``None``.
+        reading: The artwork in the frame, or None.
 
     Returns:
-        The classifier's answer, or ``None`` when there is nothing to score
+        The classifier's answer, or None when there is nothing to score
         or scoring failed.
     """
     if reading is None:

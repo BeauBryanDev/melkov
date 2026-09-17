@@ -15,6 +15,9 @@ pydantic>=2.7
 # Configuration (app/config.py) 
 python-dotenv>=1.0
 
+# Rate limiting on /chat (app/rate_limit.py)
+slowapi>=0.1.9
+
 # Orchestrator agent (app/agent/orchestrator.py) 
 langchain>=0.3
 langchain-core>=0.3
