@@ -79,3 +79,19 @@ def test_read_status_codes(
     # The classifier ran before the Space failed, so its scores are kept for /chat's backstop.
     assert readings.current("s1").style is not None
     assert readings.current("s1").description is None
+
+
+def test_read_is_rate_limited_per_client(
+    client: Any, monkeypatch: pytest.MonkeyPatch, b64_image: str
+) -> None:
+    from app import rate_limit
+
+    monkeypatch.setattr(rate_limit, "ARTWORK_READ_RATE_LIMIT", "1/minute")
+    # Past the limiter, a 413 proves the body ran without waking any model.
+    body = {"session_id": "rl", "image_base64": "x" * 20}
+    monkeypatch.setattr("app.routers.artwork.MAX_IMAGE_B64_CHARS", 10)
+
+    assert client.post("/artwork/read", json=body).status_code == 413
+    limited = client.post("/artwork/read", json=body)
+    assert limited.status_code == 429
+    assert limited.json()["detail"] == rate_limit.PER_CLIENT_MESSAGE

@@ -34,7 +34,9 @@ def _empty_artifacts() -> dict[str, Any]:
         "met_results": None,
         "louvre_results": None,
         "british_museum_results": None,
+        "cleveland_results": None,
         "art_advice": None,
+        "gallery_results": None,
         "style_analysis": None,
         "vlm_description": None,
     }
@@ -142,3 +144,36 @@ def test_follow_up_turn_without_bytes_still_sees_the_artwork(
         "/chat", json={"message": "now this", "session_id": "s1", "image_base64": b64_image[:-4] + "AAAA"}
     )
     assert seen[3] is not seen[0]
+
+
+def test_chat_is_rate_limited_per_client_and_globally(
+    client: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app import rate_limit
+
+    _patch_agent(monkeypatch, FakeAgent(), _empty_artifacts())
+    monkeypatch.setattr(rate_limit, "CHAT_RATE_LIMIT", "2/minute")
+    body = {"message": "hello", "session_id": "rl"}
+
+    assert [client.post("/chat", json=body).status_code for _ in range(3)] == [200, 200, 429]
+    limited = client.post("/chat", json=body)
+    assert limited.json()["detail"] == rate_limit.PER_CLIENT_MESSAGE
+
+    rate_limit.limiter.reset()
+    monkeypatch.setattr(rate_limit, "CHAT_RATE_LIMIT", "100/minute")
+    monkeypatch.setattr(rate_limit, "CHAT_GLOBAL_DAILY_LIMIT", 1)
+
+    assert client.post("/chat", json=body).status_code == 200
+    exhausted = client.post("/chat", json=body)
+    assert exhausted.status_code == 429
+    assert exhausted.json()["detail"] == rate_limit.GLOBAL_MESSAGE
+    assert client.get("/health").status_code == 200
+
+
+def test_chat_rejects_an_overlong_message(client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.config import MAX_MESSAGE_CHARS
+
+    _patch_agent(monkeypatch, FakeAgent(), _empty_artifacts())
+    body = {"message": "x" * (MAX_MESSAGE_CHARS + 1), "session_id": "long"}
+
+    assert client.post("/chat", json=body).status_code == 422

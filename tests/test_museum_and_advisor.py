@@ -107,3 +107,43 @@ def test_art_advice_keeps_only_trusted_channels(monkeypatch: pytest.MonkeyPatch)
     assert [v["url"][-1] for v in out] == ["a", "b", "c"]
     assert out[0]["description_snippet"].endswith("...")
     assert "Proko" in fake.kwargs["q"] and fake.kwargs["type"] == "video"
+
+
+@responses.activate
+def test_cleveland_search_parses_records_and_clamps_limit() -> None:
+    from app.tools.cleveland_museum_search import CLEVELAND_API_URL, cleveland_search
+
+    record = {
+        "title": "The Red Kerchief", "creation_date": "c. 1868-73", "technique": "oil on fabric",
+        "creators": [{"description": "Claude Monet (French, 1840-1926)"}],
+        "images": {"web": {"url": "https://cdn/1958.39_web.jpg"}},
+        "url": "https://clevelandart.org/art/1958.39",
+    }
+    responses.get(CLEVELAND_API_URL, json={"data": [record, {"title": "Bare", "images": None}]})
+
+    out = cleveland_search("Monet", limit=99)
+
+    assert out["source"] == "cleveland" and "error" not in out
+    work, bare = out["results"]
+    assert work["artist"].startswith("Claude Monet") and work["medium"] == "oil on fabric"
+    assert work["image_url"] == "https://cdn/1958.39_web.jpg"
+    assert bare["artist"] is None and bare["image_url"] is None
+    url = responses.calls[0].request.url
+    assert "limit=20" in url and "has_image=1" in url
+
+
+@responses.activate
+def test_cleveland_search_reports_failures_instead_of_raising() -> None:
+    from app.tools.cleveland_museum_search import CLEVELAND_API_URL, cleveland_search
+
+    responses.get(CLEVELAND_API_URL, body=requests.exceptions.Timeout())
+    responses.get(CLEVELAND_API_URL, status=503)
+    responses.get(CLEVELAND_API_URL, body="not json")
+    responses.get(CLEVELAND_API_URL, json=["not", "an", "object"])
+
+    outcomes = [cleveland_search("x") for _ in range(4)]
+
+    assert all(o["results"] == [] for o in outcomes)
+    assert "timed out" in outcomes[0]["error"]
+    assert "request failed" in outcomes[1]["error"]
+    assert "malformed" in outcomes[2]["error"] and "malformed" in outcomes[3]["error"]

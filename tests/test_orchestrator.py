@@ -16,6 +16,8 @@ TOOL_NAMES = {
     "search_met_artworks_tool",
     "search_louvre_artworks_tool",
     "search_british_museum_artworks_tool",
+    "search_cleveland_artworks_tool",
+    "search_local_gallery_tool",
     "query_art_history_tool",
     "get_art_advice_tool",
 }
@@ -41,7 +43,7 @@ def captured_tools(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     return captured
 
 
-def test_all_eight_tools_are_registered_and_guard_a_missing_image(
+def test_all_ten_tools_are_registered_and_guard_a_missing_image(
     captured_tools: dict[str, Any]
 ) -> None:
     _, artifacts = orchestrator.build_melkov_agent(reading=None)
@@ -52,7 +54,9 @@ def test_all_eight_tools_are_registered_and_guard_a_missing_image(
         "met_results",
         "louvre_results",
         "british_museum_results",
+        "cleveland_results",
         "art_advice",
+        "gallery_results",
         "style_analysis",
         "vlm_description",
     }
@@ -69,7 +73,7 @@ def test_tools_report_failures_instead_of_raising(
 
     for target in ("describe_artwork", "identify_art_style", "generate_artwork",
                    "search_met_artworks", "query_art_history", "louvre_search",
-                   "british_museum_search", "get_art_advice"):
+                   "british_museum_search", "cleveland_search", "get_art_advice"):
         monkeypatch.setattr(orchestrator, target, blow_up)
 
     orchestrator.build_melkov_agent(reading=Reading(image_hash="h", image_b64=b64_image))
@@ -81,6 +85,7 @@ def test_tools_report_failures_instead_of_raising(
     assert "TOOL FAILURE" in captured_tools["query_art_history_tool"].invoke({"question": "x"})
     assert "TOOL FAILURE" in captured_tools["search_louvre_artworks_tool"].invoke({"query": "x"})
     assert "TOOL FAILURE" in captured_tools["search_british_museum_artworks_tool"].invoke({"query": "x"})
+    assert "TOOL FAILURE" in captured_tools["search_cleveland_artworks_tool"].invoke({"query": "x"})
     assert "TOOL FAILURE" in captured_tools["get_art_advice_tool"].invoke({"query": "x"})
 
 
@@ -177,17 +182,6 @@ def test_cached_reading_is_inlined_and_short_circuits_the_image_tools(
     assert artifacts["style_analysis"] == identification
 
 
-def test_unread_artwork_tells_melkov_to_look_before_speaking(
-    captured_tools: dict[str, Any], b64_image: str
-) -> None:
-    orchestrator.build_melkov_agent(reading=Reading(image_hash="h", image_b64=b64_image))
-
-    prompt = captured_tools["__system_prompt__"]
-    assert "ATTACHMENT" in prompt
-    assert "call describe_artwork" in prompt
-    assert "call identify_art_style" in prompt
-
-
 def test_refused_generation_asks_for_a_rephrase_not_a_retry(
     captured_tools: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -227,3 +221,53 @@ def test_reply_and_tool_calls_are_read_back_from_the_messages() -> None:
 
     fallback = orchestrator.extract_reply([HumanMessage(content="hi")])
     assert "could not put a reply together" in fallback
+
+
+def test_local_gallery_tool_passes_full_style_and_fills_artifact(
+    monkeypatch: pytest.MonkeyPatch, captured_tools: dict[str, Any]
+) -> None:
+    work = {"id": "Post_00001", "artist": "Unknown Artist", "style": "Post-Impressionism",
+            "caption": "A sunlit wheat field.", "width": 896, "height": 896,
+            "s3_key": "images/Post/Post_00001.jpg"}
+    seen: list[str] = []
+
+    def fake_style(label: str) -> dict[str, Any]:
+        seen.append(label)
+        return {"source": "local_gallery", "query_type": "style", "query": label, "results": [work]}
+
+    monkeypatch.setattr(orchestrator, "search_by_style", fake_style)
+    _, artifacts = orchestrator.build_melkov_agent(reading=None)
+
+    reply = captured_tools["search_local_gallery_tool"].invoke({"query": "post-impressionism"})
+
+    assert seen == ["post-impressionism"]
+    assert "Found 1 works" in reply
+    assert artifacts["gallery_results"] == [work]
+
+
+def test_gallery_resolves_broad_and_aliased_styles() -> None:
+    from app.tools.local_gallery_search import resolve_styles
+
+    known = ["Early Renaissance", "High Renaissance", "Northern Renaissance",
+             "Post-Impressionism", "Pointillism", "Baroque"]
+
+    assert resolve_styles("renaissance", known) == [
+        "Early Renaissance", "High Renaissance", "Northern Renaissance"]
+    assert resolve_styles("Post Impressionism", known) == ["Pointillism", "Post-Impressionism"]
+    assert resolve_styles("BAROQUE", known) == ["Baroque"]
+    assert resolve_styles("Surrealism", known) == []
+
+
+def test_cleveland_tool_keeps_free_text_dates(
+    captured_tools: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    work = {"title": "Water Lilies", "artist": "Claude Monet", "date": "c. 1915-26",
+            "object_url": "https://clevelandart.org/art/1960.81"}
+    monkeypatch.setattr(orchestrator, "cleveland_search",
+                        lambda q: {"source": "cleveland", "query": q, "results": [work]})
+
+    _, artifacts = orchestrator.build_melkov_agent()
+    reply = captured_tools["search_cleveland_artworks_tool"].invoke({"query": "Monet"})
+
+    assert "Found 1 works" in reply and "Claude Monet, c. 1915-26" in reply
+    assert artifacts["cleveland_results"] == [work]

@@ -115,6 +115,16 @@ def client(monkeypatch: pytest.MonkeyPatch) -> Any:
         yield test_client
 
 
+@pytest.fixture(autouse=True)
+def reset_rate_limits() -> Any:
+    """Clear slowapi's in-memory counters, so one test's calls never 429 another."""
+    from app.rate_limit import limiter
+
+    limiter.reset()
+    yield
+    limiter.reset()
+
+
 @pytest.fixture
 def reset_vlm_client(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.tools import vlm_describe
