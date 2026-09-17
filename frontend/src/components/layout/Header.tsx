@@ -18,6 +18,9 @@ import ReactIcon from "../../assets/React.svg";
 import TS from "../../assets/TypeScript.svg";
 import TailwindCSS  from "../../assets/Tailwindcss.svg"
 import ViteIcon from "../../assets/Vite.svg";
+import OpenCVIcon from "../../assets/OpenCV.svg";
+import LangChainIcon from "../../assets/LangChain.png";
+
 
 interface HeaderProps {
   title?: string;
@@ -36,10 +39,13 @@ const LEFT_CREDITS = [
   { src: NumpyIcon, name: "NumPy", wordmark: true },
   { src: pythonLogo, name: "Python" },
   { src: FastAPI, name: "FastAPI", wordmark: true },
+  { src: OpenCVIcon, name: "OpenCV", wordmark: true },
   
 ];
 
 const RIGHT_CREDITS = [
+  
+  { src: LangChainIcon, name: "LangChain" },
   { src: colabLogo, name: "Google Colab" },
   { src: bflLogo, name: "Black Forest Labs" },
   { src: fluxLogo, name: "FLUX", wordmark: true },

@@ -318,7 +318,12 @@ img {
   align-items: center;
   justify-content: center;
   flex: 1 1 auto;
-  gap: 33px;
+  /* One row, always. The strip is hidden below 1180px, so on every viewport
+     that shows it the nine marks stay on a single line and give up width
+     instead of wrapping: the li's shrink (min-width: 0) and the logos ride
+     that with max-width + object-fit, which letterboxes rather than distorts. */
+  flex-wrap: nowrap;
+  gap: clamp(6px, 1.4vw, 33px);
   margin: 0;
   padding: 0 10px;
   list-style: none;
@@ -327,6 +332,7 @@ img {
 
 .masthead-credits li {
   display: flex;
+  flex: 0 1 auto;
   min-width: 0;
 }
 
@@ -334,7 +340,7 @@ img {
    width instead, since matching their height would make them read three times
    heavier than the icons beside them. */
 .credit-logo {
-  height: 45px;
+  height: clamp(28px, 3.2vw, 45px);
   width: auto;
   max-width: 100%;
   object-fit: contain;
@@ -344,7 +350,7 @@ img {
 }
 
 .credit-logo-wide {
-  height: 33px;
+  height: clamp(21px, 2.3vw, 33px);
 }
 
 .credit-logo:hover {
@@ -1838,6 +1844,22 @@ img {
   .frame-stage {
     min-height: clamp(260px, 46vw, 420px);
   }
+
+  /* The ML-stack credits are decoration, and eighteen logos are what force the
+     masthead's three columns wider than the viewport. Below the desktop layout
+     they go, rather than wrapping into rows that push the title off-screen. */
+  .masthead-credits {
+    display: none;
+  }
+
+  /* The 320px floor on the centre column plus two side blocks overflows a
+     tablet; let the centre give way instead. */
+  .masthead {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1fr);
+  }
+
+  .ornament img { width: 60px; }
+  .ornament-brush { width: 34px; }
 }
 
 @media (max-width: 720px) {
@@ -1875,17 +1897,12 @@ img {
     flex-wrap: wrap;
   }
 
-  .ornament { width: 54px; }
-
-  /* Stacked masthead: the credits get their own centred row under each block
-     rather than competing for width with the crest and the portrait. */
-  .masthead-credits {
-    flex: 0 0 auto;
-    gap: 23px;
+  /* `.ornament` is a flex row of fixed-width images, so capping the container
+     never shrank them — the trumpets simply go on phones, leaving the title
+     the full width. Credits are already hidden from 1180px down. */
+  .ornament {
+    display: none;
   }
-
-  .credit-logo { height: 35px; }
-  .credit-logo-wide { height: 26px; }
 
   .masthead-center h1 {
     font-size: clamp(1.05rem, 4.4vw, 1.4rem);
