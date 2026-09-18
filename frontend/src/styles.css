@@ -23,6 +23,14 @@
   --line-accent: rgba(105, 153, 239, 0.22);
   --line-danger: rgba(197, 92, 74, 0.34);
 
+  /* Backend reachability (the chat-header badge). Chosen to sit in the palace
+     palette rather than arrive from a traffic light: a patinated verdigris and
+     the terracotta already used for --line-danger. Both are light enough to
+     hold their hue against --royal at 10px. */
+  --status-online: #6ebd92;
+  --status-offline: #c55c4a;
+  --status-unknown: var(--gold-deep);
+
   /* Type */
   --text: #e8e0cf;
   --muted: #afa797;
@@ -497,6 +505,92 @@ img {
   align-items: baseline;
   justify-content: space-between;
   text-align: left;
+}
+
+/* Title and status badge travel together on the left; the action button keeps
+   the right. Without this group the row's space-between would push the badge
+   into the middle and it would drift as the button appears and disappears. */
+.panel-title-group {
+  display: flex;
+  align-items: baseline;
+  /* Roughly 10px more air than the badge first shipped with: at the smaller
+     size it read as part of the title rather than as a separate signal. */
+  gap: 1.22rem;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+/* --------------------------------------------------------------------------
+   Backend status badge (chat header)
+   -------------------------------------------------------------------------- */
+
+.backend-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.22rem 0.7rem 0.24rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--royal) 70%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  /* The badge sits on the display font's baseline, which rides high; this
+     drops it onto the visual centre of the title's cap height. */
+  transform: translateY(-0.1em);
+  transition: border-color 0.4s ease, color 0.4s ease;
+}
+
+.backend-status-dot {
+  width: 0.62rem;
+  height: 0.62rem;
+  border-radius: 50%;
+  background: var(--status-unknown);
+  box-shadow: 0 0 0 0 transparent;
+  transition: background 0.4s ease, box-shadow 0.4s ease;
+}
+
+.backend-status[data-state="online"] {
+  border-color: color-mix(in srgb, var(--status-online) 40%, transparent);
+  color: color-mix(in srgb, var(--status-online) 80%, var(--text));
+}
+
+.backend-status[data-state="online"] .backend-status-dot {
+  background: var(--status-online);
+  /* A slow breath, not a blink. The dot is ambient information sitting beside
+     a title someone is trying to read; anything faster competes with the
+     conversation for attention. Silenced by the global reduced-motion rule. */
+  animation: backend-status-breath 3.4s ease-in-out infinite;
+}
+
+.backend-status[data-state="offline"] {
+  border-color: color-mix(in srgb, var(--status-offline) 46%, transparent);
+  color: color-mix(in srgb, var(--status-offline) 78%, var(--text));
+}
+
+.backend-status[data-state="offline"] .backend-status-dot {
+  background: var(--status-offline);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-offline) 18%, transparent);
+}
+
+/* "Checking" is deliberately quiet — no pulse, no colour. It is the absence of
+   an answer, and dressing it up would make a page that has merely just loaded
+   look like a page with a problem. */
+.backend-status[data-state="checking"] .backend-status-dot {
+  opacity: 0.7;
+}
+
+@keyframes backend-status-breath {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--status-online) 40%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--status-online) 0%, transparent);
+  }
 }
 
 .panel-title h2 {

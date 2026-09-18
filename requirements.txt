@@ -37,6 +37,18 @@ onnxruntime>=1.18
 #RAG query path (app/tools/rag_retriever.py -> RAG/retrieval.py)
 chromadb>=0.5
 sentence-transformers>=3.0
+# UPPER BOUND, NOT A STYLE CHOICE. transformers arrives transitively through
+# sentence-transformers, so an unpinned install takes whatever is newest that
+# day. nomic-embed-text-v1.5 ships custom remote modelling code that calls
+# `get_extended_attention_mask`, which transformers deprecated and then
+# REMOVED: 5.15.1 still has it (and warns), 5.17.0 does not. On 2026-09-18 the
+# EC2 deploy installed 5.17.0 while this machine had 5.15.1, and every RAG
+# query died inside `model.encode` with the same corpus and the same code.
+# The failure is invisible from the user's side — the tool returns its error
+# as text, so Melkov simply answers from Claude's own knowledge and says his
+# library failed. Raise this ceiling only after confirming the nomic remote
+# code no longer needs that method.
+transformers>=4.40,<5.16
 # nomic-embed-text-v1.5 ships custom modelling code that imports einops;
 # without it the model load fails on an ImportError, not a missing-dep message.
 einops>=0.7

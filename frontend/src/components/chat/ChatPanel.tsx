@@ -7,6 +7,7 @@ import { ChatMessage } from "./ChatMessage";
 import { ChatInput } from "./ChatInput";
 import { ChatEmptyState } from "./ChatEmptyState";
 import { AnalysisStatus } from "./AnalysisStatus";
+import { BackendStatus } from "./BackendStatus";
 import { Panel } from "../ui/Panel";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { useDragDrop } from "../../hooks/useDragDrop";
@@ -69,7 +70,10 @@ export function ChatPanel({
           </div>
         ) : null}
         <div className="panel-title panel-title-row">
-          <h2>Chat with Melkov</h2>
+          <div className="panel-title-group">
+            <h2>Chat with Melkov</h2>
+            <BackendStatus />
+          </div>
           {messages.length > 0 ? (
             <button
               className="panel-action max-sm:px-2 max-sm:py-1.5"
