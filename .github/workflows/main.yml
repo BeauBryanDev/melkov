@@ -63,13 +63,107 @@ jobs:
       cancel-in-progress: false
 
     steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Find this runner's public IP
+        id: runner_ip
+        # Inbound :22 on the security group is restricted to the owner's
+        # address on purpose — the box serves five projects. The runner
+        # therefore opens the door for exactly itself, for about a minute,
+        # and closes it again below.
+        run: |
+          set -euo pipefail
+          ip="$(curl -sS --max-time 10 https://checkip.amazonaws.com | tr -d '[:space:]')"
+          if [ -z "$ip" ]; then
+            echo "checkip.amazonaws.com returned nothing" >&2
+            exit 1
+          fi
+          echo "cidr=${ip}/32" >> "$GITHUB_OUTPUT"
+          echo "runner is ${ip}"
+
+      - name: Open :22 for this runner only
+        id: open_sg
+        # The --ip-permissions form is what carries a Description. A rule
+        # orphaned by a hard-killed runner is then identifiable as
+        # gha-melkov-temp instead of becoming an unexplained IP in the group.
+        run: |
+          set -euo pipefail
+          if aws ec2 authorize-security-group-ingress \
+               --group-id "${{ secrets.SECURITY_GROUP_ID }}" \
+               --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${{ steps.runner_ip.outputs.cidr }},Description='gha-melkov-temp run ${{ github.run_id }}'}]" \
+               2>/tmp/sg.err; then
+            echo "opened ${{ steps.runner_ip.outputs.cidr }}"
+          elif grep -q 'InvalidPermission.Duplicate' /tmp/sg.err; then
+            # A pre-existing identical rule is harmless; it must not fail the
+            # deploy. It is also not ours, so the revoke below skips it.
+            echo "rule already present — leaving it alone"
+            echo "preexisting=true" >> "$GITHUB_OUTPUT"
+          else
+            cat /tmp/sg.err >&2
+            exit 1
+          fi
+
       - name: Load the deploy key
         run: |
+          set -euo pipefail
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           printf '%s\n' "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+
+          # The key is masked in the log, so a truncated paste is invisible
+          # there and surfaces four steps later as an unexplained "Permission
+          # denied (publickey)". Check the shape without printing any of it.
+          if ! grep -q "BEGIN OPENSSH PRIVATE KEY" ~/.ssh/deploy_key; then
+            echo "EC2_SSH_KEY has no BEGIN line — the secret is truncated" >&2
+            exit 1
+          fi
+          if ! grep -q "END OPENSSH PRIVATE KEY" ~/.ssh/deploy_key; then
+            echo "EC2_SSH_KEY has no END line — the secret is truncated" >&2
+            exit 1
+          fi
+          echo "deploy key: $(wc -l < ~/.ssh/deploy_key) lines, shape ok"
+
+          # ssh-keyscan exits 0 and writes NOTHING when the host is
+          # unreachable. Left unchecked, this step goes green and the failure
+          # reappears in the next step as "Host key verification failed",
+          # which points at the wrong thing entirely.
+          # -T 10 bounds the wait. Dropped packets (a security group that does
+          # not allow the runner) look like silence, not like a refusal, so
+          # without a timeout this hangs rather than failing.
+          ssh-keyscan -T 10 -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts || true
+          if [ ! -s ~/.ssh/known_hosts ]; then
+            echo "ssh-keyscan returned nothing for EC2_HOST on port 22." >&2
+            echo "Most likely, in order:" >&2
+            echo "  1. the temporary security-group rule did not take" >&2
+            echo "     effect — check SECURITY_GROUP_ID and the AWS creds" >&2
+            echo "  2. the instance is stopped" >&2
+            echo "  3. EC2_HOST holds a URL or user@host instead of a bare host" >&2
+            exit 1
+          fi
+          echo "known_hosts: $(wc -l < ~/.ssh/known_hosts) entries"
+
+      - name: Check the box is reachable
+        # Isolates "can CI log in at all" from "did the deploy work". Without
+        # it, an auth problem is reported as a failure of whatever command the
+        # deploy happened to run first, which reads like a git or pip problem.
+        #
+        # BatchMode=yes matters: without it a rejected key lets ssh fall
+        # through to keyboard-interactive auth, and on a runner with no TTY
+        # that can sit there until the job's 15-minute timeout instead of
+        # failing in a second.
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=yes \
+              -o BatchMode=yes \
+              -o ConnectTimeout=15 \
+              "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \
+              'echo "connected as $(whoami) on $(hostname)"'
 
       - name: Pull, install and restart
         # Deliberately plain ssh rather than a marketplace action: this repo is
@@ -79,6 +173,7 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key \
               -o StrictHostKeyChecking=yes \
+              -o BatchMode=yes \
               "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \
               'bash -se' <<'REMOTE'
           set -euo pipefail
@@ -105,6 +200,7 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key \
               -o StrictHostKeyChecking=yes \
+              -o BatchMode=yes \
               "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \
               'bash -se' <<'REMOTE'
           set -euo pipefail
@@ -121,6 +217,14 @@ jobs:
           journalctl -u melkov-api -n 40 --no-pager || true
           exit 1
           REMOTE
+
+      - name: Close :22 again
+        # always(): the door must shut even when the deploy failed above.
+        if: always() && steps.open_sg.outcome == 'success' && steps.open_sg.outputs.preexisting != 'true'
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id "${{ secrets.SECURITY_GROUP_ID }}" \
+            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${{ steps.runner_ip.outputs.cidr }}}]"
 
       - name: Discard the key
         if: always()
