@@ -241,7 +241,13 @@ used in the other Aegis frontends), and restrained ornamental detailing
 7. Build the FastAPI orchestration layer (tool-calling, routing).
 8. Build the React/TS frontend (Baroque/Rococo visual identity).
 
-## 8. License
+## 8. Models
+
+- **Style classifier (EfficientNetV2-S):** [beaunix/melkov-style](https://huggingface.co/beaunix/artwork-classifier-cnn)
+  — trained on [OpenBrush-75K](https://huggingface.co/datasets/jaddai/openbrush-75k) (credit: jaddai)
+- **Conversational/analysis layer:** Qwen2.5-VL-7B, deployed as a Gradio Space.
+
+## 9. License
 
 MIT
 
